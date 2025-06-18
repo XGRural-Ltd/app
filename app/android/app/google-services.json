@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "32735273644",
+    "project_id": "tunetap-1df6f",
+    "storage_bucket": "tunetap-1df6f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:32735273644:android:37b5cf957fc9e33246b509",
+        "android_client_info": {
+          "package_name": "com.example.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAISpJoba6YWZambWSsICrAhdMfztoae0E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
