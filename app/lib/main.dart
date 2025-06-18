@@ -1,6 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+);
   runApp(TuneTapApp());
 }
 
@@ -29,14 +37,40 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
-  void _login() {
-    if (_formKey.currentState!.validate()) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => HomePage()),
+  void _login() async {
+  if (_formKey.currentState!.validate()) {
+    try {
+      // Autentica o usuário
+      UserCredential userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
       );
+
+      // Verifica se o usuário existe no Firestore
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userCredential.user!.uid)
+          .get();
+
+      if (userDoc.exists) {
+        // Usuário existe no Firestore, prossiga normalmente
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => HomePage()),
+        );
+      } else {
+        // Usuário não existe no Firestore
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Usuário não encontrado no banco de dados.')),
+        );
+        // Opcional: deslogar o usuário
+        await FirebaseAuth.instance.signOut();
+      }
+    } on FirebaseAuthException catch (e) {
+      // ...tratamento de erro...
     }
   }
+}
 
   void _navigateToSignUp() {
     Navigator.push(
@@ -156,12 +190,36 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
-  void _signUp() {
-    if (_formKey.currentState!.validate()) {
-      // Implementar lógica de criação de conta
+  void _signUp() async {
+  if (_formKey.currentState!.validate()) {
+    try {
+      UserCredential userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+      );
+      // Salva dados adicionais no Firestore
+      await FirebaseFirestore.instance.collection('users').doc(userCredential.user!.uid).set({
+        'name': _nameController.text.trim(),
+        'email': _emailController.text.trim(),
+        'createdAt': FieldValue.serverTimestamp(),
+        'password': _passwordController.text.trim(), // Salvo em texto simples por enquanto
+      });
       Navigator.pop(context);
+      
+      // Snackbar com mensagem de erro
+    } on FirebaseAuthException catch (e) {
+      String message = 'Erro ao criar conta';
+      if (e.code == 'email-already-in-use') {
+        message = 'E-mail já está em uso';
+      } else if (e.code == 'weak-password') {
+        message = 'Senha muito fraca';
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
     }
   }
+}
 
   @override
   Widget build(BuildContext context) {
