@@ -2,13 +2,118 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package.cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_map/flutter_map.dart'; 
+import 'package:latlong2/latlong.dart'; 
+import 'package:http/http.dart' as http; 
+import 'dart:convert'; 
+
+
+class SpotifyService { 
+  final String _clientId = 'YOUR_SPOTIFY_CLIENT_ID'; 
+  final String _clientSecret = 'YOUR_SPOTIFY_CLIENT_SECRET'; 
+  String? _accessToken; 
+
+  Future<void> _getAccessToken() async { 
+    if (_accessToken != null) return; 
+
+    var response = await http.post( 
+      Uri.parse('https://accounts.spotify.com/api/token'), 
+      headers: { 
+        'Authorization': 'Basic ' + base64Encode(utf8.encode('$_clientId:$_clientSecret')), 
+        'Content-Type': 'application/x-www-form-urlencoded', 
+      }, 
+      body: 'grant_type=client_credentials', 
+    ); 
+
+    if (response.statusCode == 200) { 
+      _accessToken = json.decode(response.body)['access_token']; 
+    } else { 
+      throw Exception('Failed to get Spotify access token'); 
+    } 
+  } 
+
+  Future<Song> fetchTrackDetails(String trackName, String artistName) async { 
+    await _getAccessToken(); 
+  
+    final searchUrl = Uri.parse('https://api.spotify.com/v1/search?q=track:${Uri.encodeComponent(trackName)}%20artist:${Uri.encodeComponent(artistName)}&type=track&limit=1'); 
+    final searchResponse = await http.get(searchUrl, headers: {'Authorization': 'Bearer $_accessToken'}); 
+  
+    if (searchResponse.statusCode != 200) { 
+      throw Exception('Failed to search for track'); 
+    } 
+  
+    final searchResult = json.decode(searchResponse.body); 
+    final tracks = searchResult['tracks']['items']; 
+  
+    if (tracks.isEmpty) { 
+      return Song(name: trackName, artist: artistName, nationality: 'N/A', albumCoverUrl: 'https://placehold.co/64x64/purple/white?text=Error', location: LatLng(0,0)); 
+    } 
+  
+    final trackData = tracks[0]; 
+    final artistId = trackData['artists'][0]['id']; 
+    final albumCoverUrl = trackData['album']['images'][0]['url'];
+  
+    final artistUrl = Uri.parse('https://api.spotify.com/v1/artists/$artistId'); 
+    final artistResponse = await http.get(artistUrl, headers: {'Authorization': 'Bearer $_accessToken'}); 
+  
+    if (artistResponse.statusCode != 200) { 
+      throw Exception('Failed to fetch artist details'); 
+    } 
+  
+    final artistData = json.decode(artistResponse.body); 
+    final markets = artistData['genres'] as List<dynamic>? ?? []; 
+    final nationality = markets.isNotEmpty ? markets.first.toUpperCase() : 'N/A'; 
+    
+    Map<String, LatLng> countryCoordinates = { 
+      "US": LatLng(38.9637, -95.7129), 
+      "GB": LatLng(55.3781, -3.4360), 
+      "BR": LatLng(-14.2350, -51.9253), 
+      "JP": LatLng(36.2048, 138.2529), 
+      "POP": LatLng(38.9637, -95.7129),
+      "ROCK": LatLng(55.3781, -3.4360),
+    }; 
+    
+    final location = countryCoordinates[nationality] ?? LatLng(0,0); 
+  
+    return Song( 
+      name: trackName, 
+      artist: artistName, 
+      nationality: nationality, 
+      albumCoverUrl: albumCoverUrl, 
+      location: location, 
+    ); 
+  } 
+} 
+
+class Song { 
+  final String name; 
+  final String artist; 
+  final String nationality;
+  final String albumCoverUrl; 
+  final LatLng location; 
+
+  Song({ 
+    required this.name, 
+    required this.artist, 
+    required this.nationality, 
+    required this.albumCoverUrl, 
+    required this.location, 
+  }); 
+} 
+
+class Playlist { 
+  String name; 
+  List<Song> songs; 
+
+  Playlist({required this.name, required this.songs}); 
+} 
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
-);
+  );
   runApp(TuneTapApp());
 }
 
@@ -38,39 +143,35 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
 
   void _login() async {
-  if (_formKey.currentState!.validate()) {
-    try {
-      // Autentica o usuário
-      UserCredential userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
-      );
-
-      // Verifica se o usuário existe no Firestore
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userCredential.user!.uid)
-          .get();
-
-      if (userDoc.exists) {
-        // Usuário existe no Firestore, prossiga normalmente
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => HomePage()),
+    if (_formKey.currentState!.validate()) {
+      try {
+        UserCredential userCredential =
+            await FirebaseAuth.instance.signInWithEmailAndPassword(
+          email: _emailController.text.trim(),
+          password: _passwordController.text.trim(),
         );
-      } else {
-        // Usuário não existe no Firestore
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Usuário não encontrado no banco de dados.')),
-        );
-        // Opcional: deslogar o usuário
-        await FirebaseAuth.instance.signOut();
+
+        DocumentSnapshot userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userCredential.user!.uid)
+            .get();
+
+        if (userDoc.exists) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => HomePage()),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Usuário não encontrado no banco de dados.')),
+          );
+          await FirebaseAuth.instance.signOut();
+        }
+      } on FirebaseAuthException {
+        // ...tratamento de erro...
       }
-    } on FirebaseAuthException catch (e) {
-      // ...tratamento de erro...
     }
   }
-}
 
   void _navigateToSignUp() {
     Navigator.push(
@@ -113,7 +214,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     validator: (value) {
                       if (value == null || value.isEmpty) {
                         return 'Por favor, insira seu e-mail';
-                      } else if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) {
+                      } else if (!RegExp(r'^[^@]+@[^@]+\.[^@]+')
+                          .hasMatch(value)) {
                         return 'Por favor, insira um e-mail válido';
                       }
                       return null;
@@ -191,35 +293,36 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final _confirmPasswordController = TextEditingController();
 
   void _signUp() async {
-  if (_formKey.currentState!.validate()) {
-    try {
-      UserCredential userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
-      );
-      // Salva dados adicionais no Firestore
-      await FirebaseFirestore.instance.collection('users').doc(userCredential.user!.uid).set({
-        'name': _nameController.text.trim(),
-        'email': _emailController.text.trim(),
-        'createdAt': FieldValue.serverTimestamp(),
-        'password': _passwordController.text.trim(), // Salvo em texto simples por enquanto
-      });
-      Navigator.pop(context);
-      
-      // Snackbar com mensagem de erro
-    } on FirebaseAuthException catch (e) {
-      String message = 'Erro ao criar conta';
-      if (e.code == 'email-already-in-use') {
-        message = 'E-mail já está em uso';
-      } else if (e.code == 'weak-password') {
-        message = 'Senha muito fraca';
+    if (_formKey.currentState!.validate()) {
+      try {
+        UserCredential userCredential =
+            await FirebaseAuth.instance.createUserWithEmailAndPassword(
+          email: _emailController.text.trim(),
+          password: _passwordController.text.trim(),
+        );
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userCredential.user!.uid)
+            .set({
+          'name': _nameController.text.trim(),
+          'email': _emailController.text.trim(),
+          'createdAt': FieldValue.serverTimestamp(),
+          'password': _passwordController.text.trim(),
+        });
+        Navigator.pop(context);
+      } on FirebaseAuthException catch (e) {
+        String message = 'Erro ao criar conta';
+        if (e.code == 'email-already-in-use') {
+          message = 'E-mail já está em uso';
+        } else if (e.code == 'weak-password') {
+          message = 'Senha muito fraca';
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
     }
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -259,7 +362,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Por favor, insira seu e-mail';
-                  } else if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) {
+                  } else if (!RegExp(r'^[^@]+@[^@]+\.[^@]+')
+                      .hasMatch(value)) {
                     return 'Por favor, insira um e-mail válido';
                   }
                   return null;
@@ -328,41 +432,44 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  List<Map<String, dynamic>> playlists = [
-    {
-      'name': 'Favoritos',
-      'songs': ['Song 1 - Artist A', 'Song 2 - Artist B', 'Song 3 - Artist C']
-    },
-    {
-      'name': 'Rock Clássico',
-      'songs': ['Bohemian Rhapsody - Queen', 'Stairway to Heaven - Led Zeppelin']
-    },
-    {
-      'name': 'Relaxamento',
-      'songs': ['Weightless - Marconi Union', 'Clair de Lune - Debussy']
-    },
-  ];
+  List<Playlist> playlists = [ 
+    Playlist( 
+      name: 'Favoritos', 
+      songs: [ 
+        Song(name: 'Song 1', artist: 'Artist A', nationality: 'US', albumCoverUrl: 'https://placehold.co/64x64/7e57c2/white?text=S1', location: LatLng(34.0522, -118.2437)), 
+        Song(name: 'Song 2', artist: 'Artist B', nationality: 'GB', albumCoverUrl: 'https://placehold.co/64x64/7e57c2/white?text=S2', location: LatLng(51.5074, -0.1278)), 
+      ], 
+    ), 
+    Playlist( 
+      name: 'Rock Clássico', 
+      songs: [ 
+        Song(name: 'Bohemian Rhapsody', artist: 'Queen', nationality: 'GB', albumCoverUrl: 'https://i.scdn.co/image/ab67616d0000b273e3344b360a45c3175c138a73', location: LatLng(51.5074, -0.1278)), 
+        Song(name: 'Stairway to Heaven', artist: 'Led Zeppelin', nationality: 'GB', albumCoverUrl: 'https://i.scdn.co/image/ab67616d0000b2733d9c576547f3b85d34608c1f', location: LatLng(51.5074, -0.1278)), 
+      ], 
+    ), 
+  ]; 
 
-  void _createNewPlaylist(BuildContext context) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => CreatePlaylistScreen(
-          onCreate: (String playlistName) {
-            setState(() {
-              playlists.add({
-                'name': playlistName,
-                'songs': [
-                  'Generated Song 1',
-                  'Generated Song 2',
-                  'Generated Song 3'
-                ]
-              });
-            });
-          },
-        ),
-      ),
-    );
+  void _createNewPlaylist(BuildContext context) { 
+    Navigator.push( 
+      context, 
+      MaterialPageRoute( 
+        builder: (context) => CreatePlaylistScreen( 
+          onCreate: (String playlistName) async { 
+            final spotifyService = SpotifyService(); 
+            List<Song> generatedSongs = await Future.wait([ 
+              spotifyService.fetchTrackDetails('Blinding Lights', 'The Weeknd'), 
+              spotifyService.fetchTrackDetails('Watermelon Sugar', 'Harry Styles'), 
+              spotifyService.fetchTrackDetails('good 4 u', 'Olivia Rodrigo'), 
+            ]); 
+
+            setState(() { 
+              playlists.add( 
+                  Playlist(name: playlistName, songs: generatedSongs)); 
+            }); 
+          }, 
+        ), 
+      ), 
+    ); 
   }
 
   @override
@@ -417,40 +524,27 @@ class _HomePageState extends State<HomePage> {
               child: ListView.builder(
                 itemCount: playlists.length,
                 itemBuilder: (context, index) {
+                  final playlist = playlists[index]; 
                   return Card(
                     margin: EdgeInsets.symmetric(vertical: 8.0),
                     child: ListTile(
                       leading: Icon(Icons.music_note, color: Colors.purple),
                       title: Text(
-                        playlists[index]['name'],
+                        playlist.name, 
                         style: TextStyle(fontSize: 18),
                       ),
                       subtitle: Text(
-                        'Músicas: ${playlists[index]['songs'].length}',
+                        'Músicas: ${playlist.songs.length}', 
                       ),
-                      trailing: Icon(Icons.arrow_forward_ios, color: Colors.grey),
-                      onTap: () {
-                        // Exibir detalhes da playlist
-                        showDialog(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: Text(playlists[index]['name']),
-                            content: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: playlists[index]['songs']
-                                  .map<Widget>((song) => Text(song))
-                                  .toList(),
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () {
-                                  Navigator.pop(context);
-                                },
-                                child: Text('Fechar'),
-                              ),
-                            ],
-                          ),
-                        );
+                      trailing:
+                          Icon(Icons.arrow_forward_ios, color: Colors.grey),
+                      onTap: () { 
+                        Navigator.push( 
+                          context, 
+                          MaterialPageRoute( 
+                            builder: (context) => PlaylistDetailScreen(playlist: playlist), 
+                          ), 
+                        ); 
                       },
                     ),
                   );
@@ -463,6 +557,94 @@ class _HomePageState extends State<HomePage> {
     );
   }
 }
+
+class PlaylistDetailScreen extends StatelessWidget { 
+  final Playlist playlist; 
+
+  const PlaylistDetailScreen({Key? key, required this.playlist}) : super(key: key); 
+
+  @override 
+  Widget build(BuildContext context) { 
+    return Scaffold( 
+      appBar: AppBar( 
+        title: Text(playlist.name, style: TextStyle(color: Colors.white)), 
+        backgroundColor: Colors.purple, 
+        actions: [ 
+          IconButton( 
+            icon: Icon(Icons.map, color: Colors.white), 
+            onPressed: () { 
+              Navigator.push( 
+                context, 
+                MaterialPageRoute( 
+                  builder: (context) => PlaylistMapScreen(playlist: playlist), 
+                ), 
+              ); 
+            }, 
+          ), 
+        ], 
+      ), 
+      body: ListView.builder( 
+        itemCount: playlist.songs.length, 
+        itemBuilder: (context, index) { 
+          final song = playlist.songs[index]; 
+          return ListTile( 
+            leading: CircleAvatar( 
+              backgroundImage: NetworkImage(song.albumCoverUrl), 
+              radius: 30, 
+              backgroundColor: Colors.purple.withOpacity(0.1), 
+            ), 
+            title: Text(song.name), 
+            subtitle: Text(song.artist), 
+            trailing: Text(song.nationality), 
+          ); 
+        }, 
+      ), 
+    ); 
+  } 
+} 
+
+class PlaylistMapScreen extends StatefulWidget { 
+  final Playlist playlist; 
+
+  const PlaylistMapScreen({Key? key, required this.playlist}) : super(key: key); 
+
+  @override 
+  State<PlaylistMapScreen> createState() => _PlaylistMapScreenState(); 
+} 
+
+class _PlaylistMapScreenState extends State<PlaylistMapScreen> { 
+  @override 
+  Widget build(BuildContext context) { 
+    List<Marker> markers = widget.playlist.songs.map((song) { 
+      return Marker( 
+        width: 80.0, 
+        height: 80.0, 
+        point: song.location, 
+        child: Icon(Icons.music_note, color: Colors.red, size: 40.0), 
+      ); 
+    }).toList(); 
+
+    return Scaffold( 
+      appBar: AppBar( 
+        title: Text('Mapa da Playlist: ${widget.playlist.name}', style: TextStyle(color: Colors.white)), 
+        backgroundColor: Colors.purple, 
+      ), 
+      body: FlutterMap( 
+        options: MapOptions( 
+          initialCenter: widget.playlist.songs.isNotEmpty ? widget.playlist.songs.first.location : LatLng(0, 0), 
+          initialZoom: 2.0, 
+        ), 
+        children: [ 
+          TileLayer( 
+            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', 
+            userAgentPackageName: 'com.example.app', 
+          ), 
+          MarkerLayer(markers: markers), 
+        ], 
+      ), 
+    ); 
+  } 
+} 
 
 class CreatePlaylistScreen extends StatefulWidget {
   final Function(String) onCreate;
@@ -491,7 +673,8 @@ class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Criar Nova Playlist', style: TextStyle(color: Colors.white)),
+        title:
+            Text('Criar Nova Playlist', style: TextStyle(color: Colors.white)),
         backgroundColor: Colors.purple,
       ),
       body: Padding(
@@ -537,7 +720,8 @@ class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
                 max: 10,
                 divisions: 9,
                 label: adventurous.toString(),
-                onChanged: (value) => setState(() => adventurous = value.toInt()),
+                onChanged: (value) =>
+                    setState(() => adventurous = value.toInt()),
               ),
               SizedBox(height: 30),
               ElevatedButton(
