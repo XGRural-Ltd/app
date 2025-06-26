@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -84,19 +85,16 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       body: Padding(
         padding: const EdgeInsets.all(20.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              'TuneTap',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 40,
-                fontWeight: FontWeight.bold,
-                color: Colors.purple,
-              ),
-            ),
+           SizedBox(width: double.infinity,
+           height: 350,
+           child: Image.network(
+            "https://storage.googleapis.com/tune-tap-app-images/tunetap_logo_transparent.png",
+            )),
             SizedBox(height: 40),
             Form(
               key: _formKey,
@@ -174,7 +172,8 @@ class _LoginScreenState extends State<LoginScreen> {
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 }
 
@@ -331,15 +330,15 @@ class _HomePageState extends State<HomePage> {
   List<Map<String, dynamic>> playlists = [
     {
       'name': 'Favoritos',
-      'songs': ['Song 1 - Artist A', 'Song 2 - Artist B', 'Song 3 - Artist C']
+      'songs': [['Song 1', 'Artist A'], ['Song 2','Artist B'], ['Song 3','Artist C']]
     },
     {
       'name': 'Rock Clássico',
-      'songs': ['Bohemian Rhapsody - Queen', 'Stairway to Heaven - Led Zeppelin']
+      'songs': [['Bohemian Rhapsody', 'Queen'], ['Stairway to Heaven','Led Zeppelin']]
     },
     {
       'name': 'Relaxamento',
-      'songs': ['Weightless - Marconi Union', 'Clair de Lune - Debussy']
+      'songs': [['Weightless', 'Marconi Union'], ['Clair de Lune', 'Debussy']]
     },
   ];
 
@@ -369,50 +368,29 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('TuneTap'),
-        backgroundColor: Colors.purple,
+        title: Text('Minhas playlists'),
+        backgroundColor: Colors.white,
         centerTitle: true,
+        leading: IconButton(
+          onPressed: (){
+            Scaffold.of(context).openDrawer();
+          },
+          icon: const Icon(Icons.menu),
+          tooltip: "Menu de navegação",
+          ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(4.0),
+          child: Container(
+            color: const Color.fromARGB(255, 204, 204, 204),
+            height: 1.0,
+          )),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              'Bem-vindo ao TuneTap!',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Colors.purple,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            SizedBox(height: 20),
-            ElevatedButton.icon(
-              onPressed: () => _createNewPlaylist(context),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.purple,
-                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              icon: Icon(Icons.add, color: Colors.white),
-              label: Text(
-                'Criar Nova Playlist',
-                style: TextStyle(fontSize: 18, color: Colors.white),
-              ),
-            ),
-            SizedBox(height: 30),
-            Text(
-              'Suas Playlists:',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
-              ),
-            ),
-            SizedBox(height: 10),
+            SizedBox(height: 5),
             Expanded(
               child: ListView.builder(
                 itemCount: playlists.length,
@@ -430,27 +408,134 @@ class _HomePageState extends State<HomePage> {
                       ),
                       trailing: Icon(Icons.arrow_forward_ios, color: Colors.grey),
                       onTap: () {
-                        // Exibir detalhes da playlist
-                        showDialog(
+                        showModalBottomSheet(
                           context: context,
-                          builder: (context) => AlertDialog(
-                            title: Text(playlists[index]['name']),
-                            content: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: playlists[index]['songs']
-                                  .map<Widget>((song) => Text(song))
-                                  .toList(),
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () {
-                                  Navigator.pop(context);
-                                },
-                                child: Text('Fechar'),
+                          isScrollControlled: true,
+                          backgroundColor: Colors.transparent,
+                          builder: (BuildContext bc){
+                            return Container(
+                              height: MediaQuery.of(bc).size.height * 0.5,
+                              decoration: const BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.only(
+                                  topLeft: Radius.circular(25.0),
+                                  topRight: Radius.circular(25.0)
+                                )
                               ),
-                            ],
-                          ),
-                        );
+                              child: Column(
+                                children: <Widget>[
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 10.0),
+                                    child: Container(
+                                      height: 5.0,
+                                      width: 40.0,
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey[300],
+                                        borderRadius: BorderRadius.circular(2.5)
+                                      ),
+                                    ),
+                                  ),
+                                  SizedBox(
+                                    child: SizedBox(
+                                          child: Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: <Widget>[
+                                              const SizedBox(width: 15),
+                                              Text(
+                                                playlists[index]['name'],
+                                                style: TextStyle(fontSize: 26),
+                                                ),
+                                              const Spacer(),
+                                              FaIcon(
+                                                FontAwesomeIcons.spotify,
+                                                color: Colors.green,
+                                                size: 30,
+                                              ),
+                                              const SizedBox(width: 10)
+                                            ],
+                                          ),
+                                        ),
+                                  ),
+                                  const SizedBox(height: 13),
+                                  Expanded(
+                                    child: SingleChildScrollView(
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(10),
+                                            child: Column(
+                                              children: [
+                                              ...playlists[index]['songs']
+                                              .map<Widget>((song) => Container(
+                                                padding: EdgeInsets.only(bottom: 3),
+                                                alignment: Alignment.centerLeft,
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: <Widget>[
+                                                    Text(
+                                                    '${song[1]}',
+                                                    style: const TextStyle(fontSize: 10),
+                                                    ),
+                                                    SizedBox(height: 2),
+                                                    Text(
+                                                      '${song[0]}',
+                                                      style: const TextStyle(fontSize: 15)
+                                                    ),
+                                                    SizedBox(height: 6)
+                                                  ]),
+                                                )).toList()
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                  )
+                                  /*Expanded(
+                                    child: Column(
+                                      children: <Widget>[
+                                        SizedBox(
+                                          child: Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: <Widget>[
+                                              const SizedBox(width: 15),
+                                              Text(
+                                                playlists[index]['name'],
+                                                style: TextStyle(fontSize: 26),
+                                                ),
+                                              const Spacer(),
+                                              FaIcon(
+                                                FontAwesomeIcons.spotify,
+                                                color: Colors.green,
+                                                size: 30,
+                                              ),
+                                              const SizedBox(width: 10)
+                                              //IconButton(onPressed: () {}, icon: Icon(Icons.music_note)),
+                                              //IconButton(onPressed: () {}, icon: Icon(Icons.music_note)),
+                                            ],
+                                          ),
+                                        ),
+                                        SingleChildScrollView(
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(10),
+                                            child: Column(
+                                              children: [
+                                              ...playlists[index]['songs']
+                                              .map<Widget>((song) => Container(
+                                                padding: EdgeInsets.only(bottom: 15),
+                                                alignment: Alignment.centerLeft,
+                                                child: Text(
+                                                  '$song',
+                                                  style: const TextStyle(fontSize: 16)
+                                                  ),
+                                                )).toList()
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),*/
+                                ],
+                              ),
+                            );
+                          });
                       },
                     ),
                   );
@@ -460,6 +545,13 @@ class _HomePageState extends State<HomePage> {
           ],
         ),
       ),
+      floatingActionButton: FloatingActionButton(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30.0)),
+        backgroundColor: Colors.white,
+        onPressed: () => _createNewPlaylist(context),
+        tooltip: "Adicionar nova playlist.",
+        child: const Icon(Icons.add, color: Colors.purple,size: 35,),
+        )
     );
   }
 }
@@ -491,71 +583,86 @@ class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Criar Nova Playlist', style: TextStyle(color: Colors.white)),
-        backgroundColor: Colors.purple,
+        title: Text('Adicionar playlist'),
+        backgroundColor: Colors.white,
+        centerTitle: true,
+        leading: IconButton(
+          onPressed: (){
+            Navigator.pop(context);
+          },
+          icon: const Icon(Icons.arrow_back_ios),
+          tooltip: "Back",
+          ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(4.0),
+          child: Container(
+            color: const Color.fromARGB(255, 204, 204, 204),
+            height: 1.0,
+          )),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TextFormField(
-                decoration: InputDecoration(labelText: 'Nome da Playlist'),
-                onChanged: (value) => playlistName = value,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Por favor, insira um nome';
-                  }
-                  return null;
-                },
-              ),
-              SizedBox(height: 20),
-              DropdownButtonFormField<String>(
-                decoration: InputDecoration(labelText: 'Agitado ou Calmo?'),
-                items: [
-                  DropdownMenuItem(value: 'Agitado', child: Text('Agitado')),
-                  DropdownMenuItem(value: 'Calmo', child: Text('Calmo')),
-                ],
-                onChanged: (value) => mood = value!,
-              ),
-              SizedBox(height: 20),
-              DropdownButtonFormField<String>(
-                decoration: InputDecoration(labelText: 'Dançante ou Não?'),
-                items: [
-                  DropdownMenuItem(value: 'Dançante', child: Text('Dançante')),
-                  DropdownMenuItem(value: 'Não', child: Text('Não')),
-                ],
-                onChanged: (value) => danceable = value!,
-              ),
-              SizedBox(height: 20),
-              Text('Numa escala de 1 a 10, quão aventureiro você quer?'),
-              Slider(
-                value: adventurous.toDouble(),
-                min: 1,
-                max: 10,
-                divisions: 9,
-                label: adventurous.toString(),
-                onChanged: (value) => setState(() => adventurous = value.toInt()),
-              ),
-              SizedBox(height: 30),
-              ElevatedButton(
-                onPressed: _submit,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.purple,
-                  padding: EdgeInsets.symmetric(vertical: 15),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+        child: SingleChildScrollView(
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextFormField(
+                  decoration: InputDecoration(labelText: 'Nome da Playlist'),
+                  onChanged: (value) => playlistName = value,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Por favor, insira um nome';
+                    }
+                    return null;
+                  },
+                ),
+                SizedBox(height: 20),
+                TextFormField(
+                  decoration: InputDecoration(labelText: 'Música inicial'),
+                  ),
+                SizedBox(height: 20),
+                TextFormField(
+                  decoration: InputDecoration(labelText: 'Música final'),
+                  ),
+                SizedBox(height: 20),
+                DropdownButtonFormField<String>(
+                  decoration: InputDecoration(labelText: 'Heterogeneidade'),
+                  items: [
+                    DropdownMenuItem(value: 'Sim', child: Text('Sim')),
+                    DropdownMenuItem(value: 'Não', child: Text('Não')),
+                  ],
+                  onChanged: (value) => danceable = value!,
+                ),
+                SizedBox(height: 20),
+                Text('Duração estimada (min)'),
+                Slider(
+                  value: adventurous.toDouble(),
+                  min: 1,
+                  max: 10,
+                  divisions: 9,
+                  label: adventurous.toString(),
+                  onChanged: (value) => setState(() => adventurous = value.toInt()),
+                ),
+                SizedBox(height: 30),
+                ElevatedButton(
+                  onPressed: _submit,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.purple,
+                    padding: EdgeInsets.symmetric(vertical: 15),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: Text(
+                    'Criar Playlist',
+                    style: TextStyle(fontSize: 18, color: Colors.white),
                   ),
                 ),
-                child: Text(
-                  'Criar Playlist',
-                  style: TextStyle(fontSize: 18, color: Colors.white),
-                ),
-              ),
-            ],
-          ),
+              ],
+            ),
+        )
         ),
       ),
     );
