@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/playlist_models.dart';
 import '../models/music_models.dart';
-import 'dart:math'; // Para gerar IDs aleatórios
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// Gerencia o estado e as operações das playlists.
@@ -66,6 +65,17 @@ class PlaylistManager extends ChangeNotifier {
   Stream<List<Playlist>> streamPlaylistsForUser(String userId) {
     return _playlistsCollection
         .where('userId', isEqualTo: userId)
+        .snapshots()
+        .map((snapshot) {
+          return snapshot.docs
+              .map((doc) => Playlist.fromFirestore(doc))
+              .toList();
+        });
+  }
+
+  Stream<List<Playlist>> streamPlaylistsForAnotherUser(String userId) {
+    return _playlistsCollection
+        .where('userId', isNotEqualTo: userId)
         .snapshots()
         .map((snapshot) {
           return snapshot.docs

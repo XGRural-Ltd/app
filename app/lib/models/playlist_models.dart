@@ -7,6 +7,7 @@ class Playlist {
   final String name;
   final DateTime createdAt;
   final List<Music> musics;
+  final GeoPoint? geolocation;
 
   Playlist({
     this.id,
@@ -14,6 +15,7 @@ class Playlist {
     required this.name,
     required this.createdAt,
     required this.musics,
+    this.geolocation,
   });
 
   factory Playlist.fromFirestore(DocumentSnapshot doc) {
@@ -27,6 +29,7 @@ class Playlist {
               ?.map((musicMap) => Music.fromMap(musicMap as Map<String, dynamic>))
               .toList() ??
           [],
+      geolocation: data['geolocation'] as GeoPoint?,
     );
   }
 
@@ -34,17 +37,18 @@ class Playlist {
     return {
       'userId': userId,
       'name': name,
-      'createdAt': FieldValue.serverTimestamp(), // Usa o timestamp do servidor
+      'createdAt': FieldValue.serverTimestamp(),
       'musics': musics.map((music) => music.toMap()).toList(),
+      if (geolocation != null) 'geolocation': geolocation,
     };
   }
 
-  // Converte um objeto Playlist em um mapa para o Firestore (para atualização)
   Map<String, dynamic> toFirestoreUpdate() {
     return {
-      'userId': userId, // Incluir userId na atualização para consistência, embora não seja estritamente necessário para o `update` se o ID já foi validado
+      'userId': userId,
       'name': name,
       'musics': musics.map((music) => music.toMap()).toList(),
+      if (geolocation != null) 'geolocation': geolocation,
     };
   }
 

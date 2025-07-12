@@ -1,5 +1,6 @@
 import 'package:app/models/music_models.dart';
 import 'package:app/models/playlist_models.dart';
+import 'package:app/presentation/screens/playlist_map.dart';
 import 'package:app/services/playlist_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -8,6 +9,7 @@ import 'firebase_options.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'presentation/screens/create_playlist.dart';
+import 'package:geolocator/geolocator.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -420,11 +422,32 @@ class _HomePageState extends State<HomePage> {
       ),
     ];
 
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) return;
+    }
+    if (permission == LocationPermission.deniedForever) return;
+
+    GeoPoint? geolocation;
+    
+    try {
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      geolocation = GeoPoint(position.latitude, position.longitude);
+    } catch (e) {
+      geolocation = null;
+    }
+
+    print("Geolocalização obtida: $geolocation");
+
     final newPlaylist = Playlist(
       userId: _currentUserId!, // Passa o ID do usuário logado
       name: playlistName,
       createdAt: DateTime.now(),
       musics: newMusics,
+      geolocation: geolocation, // Adiciona o campo de geolocalização
     );
 
     String? docId = await _playlistManager.addPlaylist(newPlaylist);
@@ -449,58 +472,236 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Future<void> _updateExamplePlaylist(Playlist playlistToUpdate) async {
-    if (_currentUserId == null) {
-      print("Erro: Nenhum usuário logado para atualizar playlist.");
-      return;
-    }
-
-    // Exemplo: Adicionar uma nova música à playlist
-    final updatedMusics = List<Music>.from(playlistToUpdate.musics)..add(
-      Music(
-        title: "Nova Faixa",
-        artist: "Colaborador",
-        albumImage: "https://placehold.co/64x64/7e57c2/white?text=S1",
-        duration: "2:00",
-      ),
-    );
-
-    final updatedPlaylist = Playlist(
-      id: playlistToUpdate.id, // Manter o ID para atualização
-      userId: playlistToUpdate.userId, // Manter o userId original
-      name: "${playlistToUpdate.name} (Editada)",
-      createdAt: playlistToUpdate.createdAt, // Manter o createdAt original
-      musics: updatedMusics,
-    );
-
-    // Passa o ID do usuário logado para o método de atualização
-    bool success = await _playlistManager.updatePlaylistForUser(
-      updatedPlaylist,
-      _currentUserId!,
-    );
-    if (success) {
-      print("Playlist ${playlistToUpdate.name} atualizada.");
-    } else {
-      print("Falha ao atualizar playlist.");
+  // Função para realizar o logout
+  Future<void> _logout() async {
+    try {
+      await FirebaseAuth.instance.signOut();
+      print("Usuário deslogado com sucesso!");
+      // Redireciona para a tela de login
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => LoginScreen()),
+      );
+    } catch (e) {
+      print("Erro ao deslogar: $e");
+      // Opcional: exibir uma mensagem de erro para o usuário
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erro ao deslogar: $e')));
     }
   }
 
-  Future<void> _deleteExamplePlaylist(String playlistId) async {
-    if (_currentUserId == null) {
-      print("Erro: Nenhum usuário logado para deletar playlist.");
-      return;
-    }
+  void _createViewPlaylist(Playlist playlist) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext bc) {
+        return Container(
+          height: MediaQuery.of(bc).size.height * 0.5,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(25.0),
+              topRight: Radius.circular(25.0),
+            ),
+          ),
+          child: StatefulBuilder(
+            // Adiciona um StatefulBuilder aqui para gerenciar o estado local do modal
+            builder: (BuildContext context, StateSetter modalSetState) {
+              // Variável de estado local para o nome da playlist dentro deste modal.
+              // Ela é inicializada com o nome atual da playlist que foi passada para o onTap do ListTile.
+              String currentModalPlaylistName = playlist.name;
 
-    // Passa o ID do usuário logado para o método de exclusão
-    bool success = await _playlistManager.deletePlaylistForUser(
-      playlistId,
-      _currentUserId!,
+              return Column(
+                children: <Widget>[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10.0),
+                    child: Container(
+                      height: 5.0,
+                      width: 40.0,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2.5),
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: <Widget>[
+                        const SizedBox(width: 15),
+                        Text(
+                          currentModalPlaylistName, // <-- Este Text agora usa a variável de estado local
+                          style: const TextStyle(fontSize: 26),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.edit, color: Colors.purple),
+                          tooltip: "Editar nome da playlist",
+                          onPressed: () async {
+                            String? novoNome = await showDialog<String>(
+                              context: context,
+                              builder: (dialogContext) {
+                                // O TextEditingController é inicializado com o nome atual do modal
+                                final _editController = TextEditingController(
+                                  text: currentModalPlaylistName,
+                                );
+                                return AlertDialog(
+                                  title: const Text('Editar nome da playlist'),
+                                  content: TextField(
+                                    controller: _editController,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Novo nome',
+                                    ),
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed:
+                                          () =>
+                                              Navigator.of(dialogContext).pop(),
+                                      child: const Text('Cancelar'),
+                                    ),
+                                    ElevatedButton(
+                                      onPressed: () {
+                                        Navigator.of(
+                                          dialogContext,
+                                        ).pop(_editController.text.trim());
+                                      },
+                                      child: const Text('Salvar'),
+                                    ),
+                                  ],
+                                );
+                              },
+                            );
+                            if (novoNome != null &&
+                                novoNome.isNotEmpty &&
+                                novoNome != currentModalPlaylistName) {
+                              // Cria uma cópia da playlist com o novo nome
+                              final updatedPlaylist = Playlist(
+                                id: playlist.id,
+                                userId: playlist.userId,
+                                name:
+                                    novoNome, // Usa o nome obtido do input do usuário
+                                createdAt: playlist.createdAt,
+                                musics: playlist.musics,
+                              );
+
+                              // Envia a atualização para o Firestore
+                              await _playlistManager.updatePlaylistForUser(
+                                updatedPlaylist,
+                                _currentUserId!,
+                              );
+                              modalSetState(() {
+                                currentModalPlaylistName = novoNome;
+                              });
+                            }
+                          },
+                        ),
+                        const Spacer(),
+                        const FaIcon(
+                          FontAwesomeIcons.spotify,
+                          color: Colors.green,
+                          size: 30,
+                        ),
+                        const SizedBox(width: 10),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 13),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // ⬇️ ListView limitado por altura
+                            SizedBox(
+                              height: 300, // limite fixo ou dinâmico
+                              child: ListView.builder(
+                                itemCount: playlist.musics.length,
+                                itemBuilder: (context, index) {
+                                  final music = playlist.musics[index];
+                                  return ListTile(
+                                    leading: CircleAvatar(
+                                      backgroundImage: NetworkImage(
+                                        music.albumImage,
+                                      ),
+                                    ),
+                                    title: Text(music.title),
+                                    subtitle: Text(
+                                      '${music.artist} - ${music.duration}',
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+
+                            const SizedBox(height: 20),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16.0,
+                      vertical: 10.0,
+                    ),
+                    child: Align(
+                      alignment: Alignment.bottomRight,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          shape: const CircleBorder(),
+                          padding: const EdgeInsets.all(16),
+                        ),
+                        onPressed: () async {
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder:
+                                (context) => AlertDialog(
+                                  title: const Text('Deletar Playlist'),
+                                  content: const Text(
+                                    'Tem certeza que deseja deletar esta playlist?',
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed:
+                                          () =>
+                                              Navigator.of(context).pop(false),
+                                      child: const Text('Cancelar'),
+                                    ),
+                                    ElevatedButton(
+                                      onPressed:
+                                          () => Navigator.of(context).pop(true),
+                                      child: const Text('Deletar'),
+                                    ),
+                                  ],
+                                ),
+                          );
+                          if (confirm == true &&
+                              _currentUserId != null &&
+                              playlist.id != null) {
+                            Navigator.of(bc).pop(); // Fecha o bottom sheet
+                            await _playlistManager.deletePlaylistForUser(
+                              playlist.id!,
+                              _currentUserId!,
+                            );
+                          }
+                        },
+                        child: const Icon(Icons.delete), // Ícone centralizado
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
     );
-    if (success) {
-      print("Playlist $playlistId deletada.");
-    } else {
-      print("Falha ao deletar playlist.");
-    }
   }
 
   @override
@@ -518,15 +719,19 @@ class _HomePageState extends State<HomePage> {
     }
     return Scaffold(
       appBar: AppBar(
-        title: Text('Minhas playlists'),
+        title: const Text('Minhas playlists'),
         backgroundColor: Colors.white,
         centerTitle: true,
-        leading: IconButton(
-          onPressed: () {
-            Scaffold.of(context).openDrawer();
+        leading: Builder(
+          builder: (BuildContext context) {
+            return IconButton(
+              onPressed: () {
+                Scaffold.of(context).openDrawer();
+              },
+              icon: const Icon(Icons.menu),
+              tooltip: "Menu de navegação",
+            );
           },
-          icon: const Icon(Icons.menu),
-          tooltip: "Menu de navegação",
         ),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(4.0),
@@ -536,297 +741,92 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
       ),
+      drawer: Drawer(
+        child: Column(
+          children: <Widget>[
+            // Cabeçalho do Drawer (opcional, mas comum)
+            const DrawerHeader(
+              decoration: BoxDecoration(color: Colors.purple),
+              child: SizedBox(
+                width: double.infinity,
+                child: Text(
+                  'Menu',
+                  style: TextStyle(color: Colors.white, fontSize: 24),
+                ),
+              ),
+            ),
+            // Botão para o mapa de playlists
+            ListTile(
+              leading: const Icon(Icons.map),
+              title: const Text('Mapa de Playlists'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const MapaPlaylistsPage(),
+                  ),
+                );
+              },
+            ),
+            // Botão para integrar com o Spotify
+            ListTile(
+              leading: const FaIcon(
+                FontAwesomeIcons.spotify,
+                color: Colors.green,
+              ),
+              title: const Text('Integrar com Spotify'),
+              onTap: () {
+                // Fechar o drawer
+                Navigator.pop(context);
+                // Adicionar funcionalidade para integrar com Spotify aqui (ainda sem função)
+                print("Botão 'Integrar com Spotify' clicado.");
+              },
+            ),
+            const Spacer(), // Adiciona um espaço flexível para empurrar o botão de logout para o final
+            // Botão para deslogar
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: ListTile(
+                leading: const Icon(Icons.logout, color: Colors.red),
+                title: const Text('Sair', style: TextStyle(color: Colors.red)),
+                onTap: _logout, // Chama a função de logout
+              ),
+            ),
+            const SizedBox(height: 16), // Espaço para o final do drawer
+          ],
+        ),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SizedBox(height: 5),
+            const SizedBox(height: 5),
             Expanded(
               child: ListView.builder(
                 itemCount: _playlists.length,
                 itemBuilder: (context, index) {
                   return Card(
-                    margin: EdgeInsets.symmetric(vertical: 8.0),
+                    margin: const EdgeInsets.symmetric(vertical: 8.0),
                     child: ListTile(
-                      leading: Icon(Icons.music_note, color: Colors.purple),
+                      leading: const Icon(
+                        Icons.music_note,
+                        color: Colors.purple,
+                      ),
                       title: Text(
                         _playlists[index].name,
-                        style: TextStyle(fontSize: 18),
+                        style: const TextStyle(fontSize: 18),
                       ),
                       subtitle: Text(
                         'Músicas: ${_playlists[index].musics.length}',
                       ),
-                      trailing: Icon(
+                      trailing: const Icon(
                         Icons.arrow_forward_ios,
                         color: Colors.grey,
                       ),
                       onTap: () {
-                        showModalBottomSheet(
-                          context: context,
-                          isScrollControlled: true,
-                          backgroundColor: Colors.transparent,
-                          builder: (BuildContext bc) {
-                            return Container(
-                              height: MediaQuery.of(bc).size.height * 0.5,
-                              decoration: const BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.only(
-                                  topLeft: Radius.circular(25.0),
-                                  topRight: Radius.circular(25.0),
-                                ),
-                              ),
-                              child: StatefulBuilder(
-                                // Adiciona um StatefulBuilder aqui para gerenciar o estado local do modal
-                                builder: (
-                                  BuildContext context,
-                                  StateSetter modalSetState,
-                                ) {
-                                  // Variável de estado local para o nome da playlist dentro deste modal.
-                                  // Ela é inicializada com o nome atual da playlist que foi passada para o onTap do ListTile.
-                                  String currentModalPlaylistName =
-                                      _playlists[index].name;
-
-                                  return Column(
-                                    children: <Widget>[
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          vertical: 10.0,
-                                        ),
-                                        child: Container(
-                                          height: 5.0,
-                                          width: 40.0,
-                                          decoration: BoxDecoration(
-                                            color: Colors.grey[300],
-                                            borderRadius: BorderRadius.circular(
-                                              2.5,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      SizedBox(
-                                        child: Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceBetween,
-                                          children: <Widget>[
-                                            const SizedBox(width: 15),
-                                            Text(
-                                              currentModalPlaylistName, // <-- Este Text agora usa a variável de estado local
-                                              style: const TextStyle(
-                                                fontSize: 26,
-                                              ),
-                                            ),
-                                            IconButton(
-                                              icon: const Icon(
-                                                Icons.edit,
-                                                color: Colors.purple,
-                                              ),
-                                              tooltip:
-                                                  "Editar nome da playlist",
-                                              onPressed: () async {
-                                                String?
-                                                novoNome = await showDialog<
-                                                  String
-                                                >(
-                                                  context: context,
-                                                  builder: (dialogContext) {
-                                                    // O TextEditingController é inicializado com o nome atual do modal
-                                                    final _editController =
-                                                        TextEditingController(
-                                                          text:
-                                                              currentModalPlaylistName,
-                                                        );
-                                                    return AlertDialog(
-                                                      title: const Text(
-                                                        'Editar nome da playlist',
-                                                      ),
-                                                      content: TextField(
-                                                        controller:
-                                                            _editController,
-                                                        decoration:
-                                                            const InputDecoration(
-                                                              labelText:
-                                                                  'Novo nome',
-                                                            ),
-                                                      ),
-                                                      actions: [
-                                                        TextButton(
-                                                          onPressed:
-                                                              () =>
-                                                                  Navigator.of(
-                                                                    dialogContext,
-                                                                  ).pop(),
-                                                          child: const Text(
-                                                            'Cancelar',
-                                                          ),
-                                                        ),
-                                                        ElevatedButton(
-                                                          onPressed: () {
-                                                            Navigator.of(
-                                                              dialogContext,
-                                                            ).pop(
-                                                              _editController
-                                                                  .text
-                                                                  .trim(),
-                                                            );
-                                                          },
-                                                          child: const Text(
-                                                            'Salvar',
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    );
-                                                  },
-                                                );
-                                                if (novoNome != null &&
-                                                    novoNome.isNotEmpty &&
-                                                    novoNome !=
-                                                        currentModalPlaylistName) {
-                                                  // Cria uma cópia da playlist com o novo nome
-                                                  final updatedPlaylist = Playlist(
-                                                    id: _playlists[index].id,
-                                                    userId:
-                                                        _playlists[index]
-                                                            .userId,
-                                                    name:
-                                                        novoNome, // Usa o nome obtido do input do usuário
-                                                    createdAt:
-                                                        _playlists[index]
-                                                            .createdAt,
-                                                    musics:
-                                                        _playlists[index]
-                                                            .musics,
-                                                  );
-
-                                                  // Envia a atualização para o Firestore
-                                                  await _playlistManager
-                                                      .updatePlaylistForUser(
-                                                        updatedPlaylist,
-                                                        _currentUserId!,
-                                                      );
-
-                                                  // --- FUNÇÃO PARA ATUALIZAR O WIDGET TEXT DENTRO DESTE CONTAINER ---
-                                                  // Chama o setState do StatefulBuilder (modalSetState)
-                                                  // Isso reconstrói *apenas* o conteúdo do BottomSheet,
-                                                  // atualizando o Text com o 'novoNome' imediatamente.
-                                                  modalSetState(() {
-                                                    currentModalPlaylistName =
-                                                        novoNome;
-                                                  });
-                                                  // O StreamBuilder principal da HomePage ainda detectará a mudança no Firestore
-                                                  // e reconstruirá a lista principal de playlists (ListTile.title), garantindo
-                                                  // que a interface inteira esteja sincronizada após a operação no banco de dados.
-                                                }
-                                              },
-                                            ),
-                                            const Spacer(),
-                                            const FaIcon(
-                                              FontAwesomeIcons.spotify,
-                                              color: Colors.green,
-                                              size: 30,
-                                            ),
-                                            const SizedBox(width: 10),
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(height: 13),
-                                      Expanded(
-                                        child: SingleChildScrollView(
-                                          child: Padding(
-                                            padding: const EdgeInsets.all(10),
-                                            child: Column(
-                                              children: [
-                                                ..._playlists[index].musics
-                                                    .map<Widget>(
-                                                      (song) => Container(
-                                                        padding:
-                                                            const EdgeInsets.only(
-                                                              bottom: 3,
-                                                            ),
-                                                        alignment:
-                                                            Alignment
-                                                                .centerLeft,
-                                                        child: Column(
-                                                          crossAxisAlignment:
-                                                              CrossAxisAlignment
-                                                                  .start,
-                                                          children: <Widget>[
-                                                            Text(
-                                                              song.title,
-                                                              style:
-                                                                  const TextStyle(
-                                                                    fontSize:
-                                                                        10,
-                                                                  ),
-                                                            ),
-                                                            const SizedBox(
-                                                              height: 2,
-                                                            ),
-                                                            Text(
-                                                              song.artist,
-                                                              style:
-                                                                  const TextStyle(
-                                                                    fontSize:
-                                                                        15,
-                                                                  ),
-                                                            ),
-                                                            const SizedBox(
-                                                              height: 6,
-                                                            ),
-                                                          ],
-                                                        ),
-                                                      ),
-                                                    )
-                                                    .toList(),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 16.0,
-                                          vertical: 10.0,
-                                        ),
-                                        child: Align(
-                                          alignment: Alignment.bottomRight,
-                                          child: ElevatedButton.icon(
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor: Colors.red,
-                                              foregroundColor: Colors.white,
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                              ),
-                                            ),
-                                            icon: const Icon(Icons.delete),
-                                            label: const Text(
-                                              'Deletar Playlist',
-                                            ),
-                                            onPressed: () async {
-                                              Navigator.of(
-                                                bc,
-                                              ).pop(); // Fecha o bottom sheet
-                                              if (_currentUserId != null &&
-                                                  _playlists[index].id !=
-                                                      null) {
-                                                await _playlistManager
-                                                    .deletePlaylistForUser(
-                                                      _playlists[index].id!,
-                                                      _currentUserId!,
-                                                    );
-                                              }
-                                            },
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  );
-                                },
-                              ),
-                            );
-                          },
-                        );
+                        _createViewPlaylist(_playlists[index]);
                       },
                     ),
                   );
