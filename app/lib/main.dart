@@ -1,3 +1,7 @@
+import 'dart:convert';
+import 'dart:async';
+import 'dart:math';
+import 'package:crypto/crypto.dart';
 import 'package:app/models/music_models.dart';
 import 'package:app/models/playlist_models.dart';
 import 'package:app/presentation/screens/playlist_map.dart';
@@ -5,11 +9,17 @@ import 'package:app/services/playlist_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
+import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
+import 'package:app_links/app_links.dart';
 import 'firebase_options.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'presentation/screens/create_playlist.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:app/services/spotify_manager.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -366,7 +376,10 @@ class _HomePageState extends State<HomePage> {
   final PlaylistManager _playlistManager = PlaylistManager();
   List<Playlist> _playlists = [];
   String? _currentUserId;
-  bool _isLoading = true; // Novo estado de carregamento
+  bool _isLoading = true;
+  final SpotifyManager _spotifyManager = SpotifyManager();
+  String? _spotifyToken;
+  String? _spotifyUserId;
 
   @override
   void initState() {
@@ -430,7 +443,7 @@ class _HomePageState extends State<HomePage> {
     if (permission == LocationPermission.deniedForever) return;
 
     GeoPoint? geolocation;
-    
+
     try {
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
@@ -598,10 +611,23 @@ class _HomePageState extends State<HomePage> {
                           },
                         ),
                         const Spacer(),
-                        const FaIcon(
-                          FontAwesomeIcons.spotify,
-                          color: Colors.green,
-                          size: 30,
+                        IconButton(
+                          icon: const FaIcon(
+                            FontAwesomeIcons.spotify,
+                            color: Colors.green,
+                            size: 30,
+                          ),
+                          onPressed:
+                              () =>
+                                  _spotifyManager.createAndOpenSpotifyPlaylist(
+                                    _spotifyUserId!,
+                                    [
+                                      "spotify:track:4iZ4pt7kvcaH6Yo8UoZ4s2",
+                                      "spotify:track:0QoIUtJg9pRCpMb72jFBlV",
+                                    ],
+                                    _spotifyToken!,
+                                    playlist.name,
+                                  ),
                         ),
                         const SizedBox(width: 10),
                       ],
@@ -776,11 +802,41 @@ class _HomePageState extends State<HomePage> {
                 color: Colors.green,
               ),
               title: const Text('Integrar com Spotify'),
-              onTap: () {
-                // Fechar o drawer
-                Navigator.pop(context);
-                // Adicionar funcionalidade para integrar com Spotify aqui (ainda sem função)
-                print("Botão 'Integrar com Spotify' clicado.");
+              onTap: () async {
+                _spotifyToken = await _spotifyManager.authenticateWithSpotify();
+                _spotifyUserId = await _spotifyManager.getSpotifyUserId(
+                  _spotifyToken!,
+                );
+                print('Token do Spotify: $_spotifyToken');
+                print('User ID do Spotify: $_spotifyUserId');
+                if (_spotifyToken != null && _spotifyUserId != null) {
+                  Navigator.pop(context); // Fecha o Drawer
+
+                  // Aguarda o Drawer fechar antes de mostrar o SnackBar
+                  Future.delayed(Duration(milliseconds: 300), () {
+                    ScaffoldMessenger.of(context).clearSnackBars();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Conectado ao Spotify com sucesso!'),
+                        behavior: SnackBarBehavior.floating,
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  });
+                } else {
+                  Navigator.pop(context);
+
+                  Future.delayed(Duration(milliseconds: 300), () {
+                    ScaffoldMessenger.of(context).clearSnackBars();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Falha ao conectar ao Spotify.'),
+                        behavior: SnackBarBehavior.floating,
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  });
+                }
               },
             ),
             const Spacer(), // Adiciona um espaço flexível para empurrar o botão de logout para o final
