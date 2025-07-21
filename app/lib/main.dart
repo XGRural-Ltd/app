@@ -433,6 +433,12 @@ class _HomePageState extends State<HomePage> {
         albumImage: "https://placehold.co/64x64/7e57c2/white?text=S1",
         duration: "1:60",
       ),
+      Music(
+        title: "Not Like Us",
+        artist: "Kendrick Lamar",
+        albumImage: "https://placehold.co/64x64/7e57c2/white?text=S1",
+        duration: "1:60",
+      ),
     ];
 
     LocationPermission permission = await Geolocator.checkPermission();
@@ -620,11 +626,9 @@ class _HomePageState extends State<HomePage> {
                           onPressed:
                               () =>
                                   _spotifyManager.createAndOpenSpotifyPlaylist(
+                                    context,
                                     _spotifyUserId!,
-                                    [
-                                      "spotify:track:4iZ4pt7kvcaH6Yo8UoZ4s2",
-                                      "spotify:track:0QoIUtJg9pRCpMb72jFBlV",
-                                    ],
+                                    playlist.musics,
                                     _spotifyToken!,
                                     playlist.name,
                                   ),
