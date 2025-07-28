@@ -1,123 +1,35 @@
+import 'dart:convert';
+import 'dart:async';
+import 'dart:math';
+import 'package:crypto/crypto.dart';
+import 'package:app/models/music_models.dart';
+import 'package:app/models/playlist_models.dart';
+import 'package:app/presentation/screens/playlist_map.dart';
+import 'package:app/services/playlist_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
+import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
+import 'package:app_links/app_links.dart';
 import 'firebase_options.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter_map/flutter_map.dart'; 
-import 'package:latlong2/latlong.dart'; 
-import 'package:http/http.dart' as http; 
-import 'dart:convert'; 
-
-
-class SpotifyService { 
-  final String _clientId = 'YOUR_SPOTIFY_CLIENT_ID'; 
-  final String _clientSecret = 'YOUR_SPOTIFY_CLIENT_SECRET'; 
-  String? _accessToken; 
-
-  Future<void> _getAccessToken() async { 
-    if (_accessToken != null) return; 
-
-    var response = await http.post( 
-      Uri.parse('https://accounts.spotify.com/api/token'), 
-      headers: { 
-        'Authorization': 'Basic ' + base64Encode(utf8.encode('$_clientId:$_clientSecret')), 
-        'Content-Type': 'application/x-www-form-urlencoded', 
-      }, 
-      body: 'grant_type=client_credentials', 
-    ); 
-
-    if (response.statusCode == 200) { 
-      _accessToken = json.decode(response.body)['access_token']; 
-    } else { 
-      throw Exception('Failed to get Spotify access token'); 
-    } 
-  } 
-
-  Future<Song> fetchTrackDetails(String trackName, String artistName) async { 
-    await _getAccessToken(); 
-  
-    final searchUrl = Uri.parse('https://api.spotify.com/v1/search?q=track:${Uri.encodeComponent(trackName)}%20artist:${Uri.encodeComponent(artistName)}&type=track&limit=1'); 
-    final searchResponse = await http.get(searchUrl, headers: {'Authorization': 'Bearer $_accessToken'}); 
-  
-    if (searchResponse.statusCode != 200) { 
-      throw Exception('Failed to search for track'); 
-    } 
-  
-    final searchResult = json.decode(searchResponse.body); 
-    final tracks = searchResult['tracks']['items']; 
-  
-    if (tracks.isEmpty) { 
-      return Song(name: trackName, artist: artistName, nationality: 'N/A', albumCoverUrl: 'https://placehold.co/64x64/purple/white?text=Error', location: LatLng(0,0)); 
-    } 
-  
-    final trackData = tracks[0]; 
-    final artistId = trackData['artists'][0]['id']; 
-    final albumCoverUrl = trackData['album']['images'][0]['url'];
-  
-    final artistUrl = Uri.parse('https://api.spotify.com/v1/artists/$artistId'); 
-    final artistResponse = await http.get(artistUrl, headers: {'Authorization': 'Bearer $_accessToken'}); 
-  
-    if (artistResponse.statusCode != 200) { 
-      throw Exception('Failed to fetch artist details'); 
-    } 
-  
-    final artistData = json.decode(artistResponse.body); 
-    final markets = artistData['genres'] as List<dynamic>? ?? []; 
-    final nationality = markets.isNotEmpty ? markets.first.toUpperCase() : 'N/A'; 
-    
-    Map<String, LatLng> countryCoordinates = { 
-      "US": LatLng(38.9637, -95.7129), 
-      "GB": LatLng(55.3781, -3.4360), 
-      "BR": LatLng(-14.2350, -51.9253), 
-      "JP": LatLng(36.2048, 138.2529), 
-      "POP": LatLng(38.9637, -95.7129),
-      "ROCK": LatLng(55.3781, -3.4360),
-    }; 
-    
-    final location = countryCoordinates[nationality] ?? LatLng(0,0); 
-  
-    return Song( 
-      name: trackName, 
-      artist: artistName, 
-      nationality: nationality, 
-      albumCoverUrl: albumCoverUrl, 
-      location: location, 
-    ); 
-  } 
-} 
-
-class Song { 
-  final String name; 
-  final String artist; 
-  final String nationality;
-  final String albumCoverUrl; 
-  final LatLng location; 
-
-  Song({ 
-    required this.name, 
-    required this.artist, 
-    required this.nationality, 
-    required this.albumCoverUrl, 
-    required this.location, 
-  }); 
-} 
-
-class Playlist { 
-  String name; 
-  List<Song> songs; 
-
-  Playlist({required this.name, required this.songs}); 
-} 
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'presentation/screens/create_playlist.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:app/services/spotify_manager.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-  runApp(TuneTapApp());
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  runApp(const TuneTapApp());
 }
 
 class TuneTapApp extends StatelessWidget {
+  const TuneTapApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -127,7 +39,23 @@ class TuneTapApp extends StatelessWidget {
         primarySwatch: Colors.purple,
         scaffoldBackgroundColor: Colors.white,
       ),
-      home: LoginScreen(),
+      home: StreamBuilder<User?>(
+        stream:
+            FirebaseAuth.instance
+                .authStateChanges(), // Escuta mudanças na autenticação
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
+          if (snapshot.hasData) {
+            return HomePage();
+          } else {
+            return LoginScreen();
+          }
+        },
+      ),
     );
   }
 }
@@ -145,29 +73,37 @@ class _LoginScreenState extends State<LoginScreen> {
   void _login() async {
     if (_formKey.currentState!.validate()) {
       try {
-        UserCredential userCredential =
-            await FirebaseAuth.instance.signInWithEmailAndPassword(
-          email: _emailController.text.trim(),
-          password: _passwordController.text.trim(),
-        );
+        // Autentica o usuário
+        UserCredential userCredential = await FirebaseAuth.instance
+            .signInWithEmailAndPassword(
+              email: _emailController.text.trim(),
+              password: _passwordController.text.trim(),
+            );
 
-        DocumentSnapshot userDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(userCredential.user!.uid)
-            .get();
+        // Verifica se o usuário existe no Firestore
+        DocumentSnapshot userDoc =
+            await FirebaseFirestore.instance
+                .collection('users')
+                .doc(userCredential.user!.uid)
+                .get();
 
         if (userDoc.exists) {
+          // Usuário existe no Firestore, prossiga normalmente
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (context) => HomePage()),
           );
         } else {
+          // Usuário não existe no Firestore
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Usuário não encontrado no banco de dados.')),
+            SnackBar(
+              content: Text('Usuário não encontrado no banco de dados.'),
+            ),
           );
+          // Opcional: deslogar o usuário
           await FirebaseAuth.instance.signOut();
         }
-      } on FirebaseAuthException {
+      } on FirebaseAuthException catch (e) {
         // ...tratamento de erro...
       }
     }
@@ -185,95 +121,96 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       body: Padding(
         padding: const EdgeInsets.all(20.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'TuneTap',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 40,
-                fontWeight: FontWeight.bold,
-                color: Colors.purple,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                width: double.infinity,
+                height: 350,
+                child: Image.network(
+                  "https://storage.googleapis.com/tune-tap-app-images/tunetap_logo_transparent.png",
+                ),
               ),
-            ),
-            SizedBox(height: 40),
-            Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  TextFormField(
-                    controller: _emailController,
-                    decoration: InputDecoration(
-                      labelText: 'E-mail',
-                      border: OutlineInputBorder(),
+              SizedBox(height: 40),
+              Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextFormField(
+                      controller: _emailController,
+                      decoration: InputDecoration(
+                        labelText: 'E-mail',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.emailAddress,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Por favor, insira seu e-mail';
+                        } else if (!RegExp(
+                          r'^[^@]+@[^@]+\.[^@]+',
+                        ).hasMatch(value)) {
+                          return 'Por favor, insira um e-mail válido';
+                        }
+                        return null;
+                      },
                     ),
-                    keyboardType: TextInputType.emailAddress,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Por favor, insira seu e-mail';
-                      } else if (!RegExp(r'^[^@]+@[^@]+\.[^@]+')
-                          .hasMatch(value)) {
-                        return 'Por favor, insira um e-mail válido';
-                      }
-                      return null;
-                    },
-                  ),
-                  SizedBox(height: 20),
-                  TextFormField(
-                    controller: _passwordController,
-                    decoration: InputDecoration(
-                      labelText: 'Senha',
-                      border: OutlineInputBorder(),
+                    SizedBox(height: 20),
+                    TextFormField(
+                      controller: _passwordController,
+                      decoration: InputDecoration(
+                        labelText: 'Senha',
+                        border: OutlineInputBorder(),
+                      ),
+                      obscureText: true,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Por favor, insira sua senha';
+                        } else if (value.length < 6) {
+                          return 'A senha deve ter pelo menos 6 caracteres';
+                        }
+                        return null;
+                      },
                     ),
-                    obscureText: true,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Por favor, insira sua senha';
-                      } else if (value.length < 6) {
-                        return 'A senha deve ter pelo menos 6 caracteres';
-                      }
-                      return null;
-                    },
-                  ),
-                  SizedBox(height: 30),
-                  ElevatedButton(
-                    onPressed: _login,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.purple,
-                      padding: EdgeInsets.symmetric(vertical: 15),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
+                    SizedBox(height: 30),
+                    ElevatedButton(
+                      onPressed: _login,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.purple,
+                        padding: EdgeInsets.symmetric(vertical: 15),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: Text(
+                        'Entrar',
+                        style: TextStyle(fontSize: 18, color: Colors.white),
                       ),
                     ),
-                    child: Text(
-                      'Entrar',
-                      style: TextStyle(fontSize: 18, color: Colors.white),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            SizedBox(height: 20),
-            TextButton(
-              onPressed: () {
-                // Implementar a lógica de "Esqueceu a senha?"
-              },
-              child: Text(
-                'Esqueceu a senha?',
-                style: TextStyle(color: Colors.purple),
+              SizedBox(height: 20),
+              TextButton(
+                onPressed: () {
+                  // Implementar a lógica de "Esqueceu a senha?"
+                },
+                child: Text(
+                  'Esqueceu a senha?',
+                  style: TextStyle(color: Colors.purple),
+                ),
               ),
-            ),
-            TextButton(
-              onPressed: _navigateToSignUp,
-              child: Text(
-                'Criar conta',
-                style: TextStyle(color: Colors.purple),
+              TextButton(
+                onPressed: _navigateToSignUp,
+                child: Text(
+                  'Criar conta',
+                  style: TextStyle(color: Colors.purple),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -295,21 +232,26 @@ class _SignUpScreenState extends State<SignUpScreen> {
   void _signUp() async {
     if (_formKey.currentState!.validate()) {
       try {
-        UserCredential userCredential =
-            await FirebaseAuth.instance.createUserWithEmailAndPassword(
-          email: _emailController.text.trim(),
-          password: _passwordController.text.trim(),
-        );
+        UserCredential userCredential = await FirebaseAuth.instance
+            .createUserWithEmailAndPassword(
+              email: _emailController.text.trim(),
+              password: _passwordController.text.trim(),
+            );
+        // Salva dados adicionais no Firestore
         await FirebaseFirestore.instance
             .collection('users')
             .doc(userCredential.user!.uid)
             .set({
-          'name': _nameController.text.trim(),
-          'email': _emailController.text.trim(),
-          'createdAt': FieldValue.serverTimestamp(),
-          'password': _passwordController.text.trim(),
-        });
+              'name': _nameController.text.trim(),
+              'email': _emailController.text.trim(),
+              'createdAt': FieldValue.serverTimestamp(),
+              'password':
+                  _passwordController.text
+                      .trim(), // Salvo em texto simples por enquanto
+            });
         Navigator.pop(context);
+
+        // Snackbar com mensagem de erro
       } on FirebaseAuthException catch (e) {
         String message = 'Erro ao criar conta';
         if (e.code == 'email-already-in-use') {
@@ -317,9 +259,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
         } else if (e.code == 'weak-password') {
           message = 'Senha muito fraca';
         }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
       }
     }
   }
@@ -362,8 +304,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Por favor, insira seu e-mail';
-                  } else if (!RegExp(r'^[^@]+@[^@]+\.[^@]+')
-                      .hasMatch(value)) {
+                  } else if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) {
                     return 'Por favor, insira um e-mail válido';
                   }
                   return null;
@@ -432,119 +373,520 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  List<Playlist> playlists = [ 
-    Playlist( 
-      name: 'Favoritos', 
-      songs: [ 
-        Song(name: 'Song 1', artist: 'Artist A', nationality: 'US', albumCoverUrl: 'https://placehold.co/64x64/7e57c2/white?text=S1', location: LatLng(34.0522, -118.2437)), 
-        Song(name: 'Song 2', artist: 'Artist B', nationality: 'GB', albumCoverUrl: 'https://placehold.co/64x64/7e57c2/white?text=S2', location: LatLng(51.5074, -0.1278)), 
-      ], 
-    ), 
-    Playlist( 
-      name: 'Rock Clássico', 
-      songs: [ 
-        Song(name: 'Bohemian Rhapsody', artist: 'Queen', nationality: 'GB', albumCoverUrl: 'https://i.scdn.co/image/ab67616d0000b273e3344b360a45c3175c138a73', location: LatLng(51.5074, -0.1278)), 
-        Song(name: 'Stairway to Heaven', artist: 'Led Zeppelin', nationality: 'GB', albumCoverUrl: 'https://i.scdn.co/image/ab67616d0000b2733d9c576547f3b85d34608c1f', location: LatLng(51.5074, -0.1278)), 
-      ], 
-    ), 
-  ]; 
+  final PlaylistManager _playlistManager = PlaylistManager();
+  List<Playlist> _playlists = [];
+  String? _currentUserId;
+  bool _isLoading = true;
+  final SpotifyManager _spotifyManager = SpotifyManager();
+  String? _spotifyToken;
+  String? _spotifyUserId;
 
-  void _createNewPlaylist(BuildContext context) { 
-    Navigator.push( 
-      context, 
-      MaterialPageRoute( 
-        builder: (context) => CreatePlaylistScreen( 
-          onCreate: (String playlistName) async { 
-            final spotifyService = SpotifyService(); 
-            List<Song> generatedSongs = await Future.wait([ 
-              spotifyService.fetchTrackDetails('Blinding Lights', 'The Weeknd'), 
-              spotifyService.fetchTrackDetails('Watermelon Sugar', 'Harry Styles'), 
-              spotifyService.fetchTrackDetails('good 4 u', 'Olivia Rodrigo'), 
-            ]); 
+  @override
+  void initState() {
+    super.initState();
+    _initializeUserAndLoadPlaylists();
+  }
 
-            setState(() { 
-              playlists.add( 
-                  Playlist(name: playlistName, songs: generatedSongs)); 
-            }); 
-          }, 
-        ), 
-      ), 
-    ); 
+  Future<void> _initializeUserAndLoadPlaylists() async {
+    User? user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      setState(() {
+        _currentUserId = user.uid;
+        _isLoading = false; // Usuário encontrado, carregamento concluído
+      });
+      print("Usuário logado: $_currentUserId");
+      // Começa a escutar as playlists do usuário logado
+      _playlistManager.streamPlaylistsForUser(_currentUserId!).listen((
+        playlists,
+      ) {
+        setState(() {
+          _playlists = playlists;
+        });
+        print("Playlists atualizadas: ${_playlists.length}");
+      });
+    } else {
+      // Se não houver usuário, redirecione para o login
+      print("Nenhum usuário logado. Redirecionando para LoginScreen.");
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => LoginScreen()),
+      );
+    }
+  }
+
+  Future<void> _addExamplePlaylist(String playlistName) async {
+    if (_currentUserId == null) {
+      print("Erro: Nenhum usuário logado para adicionar playlist.");
+      return;
+    }
+
+    final newMusics = [
+      Music(
+        title: "Bohemian Rhapsody",
+        artist: "Queen",
+        albumImage: "https://placehold.co/64x64/7e57c2/white?text=S1",
+        duration: "2:80",
+      ),
+      Music(
+        title: "Stairway to Heaven",
+        artist: "Led Zeppelin",
+        albumImage: "https://placehold.co/64x64/7e57c2/white?text=S1",
+        duration: "1:60",
+      ),
+      Music(
+        title: "Not Like Us",
+        artist: "Kendrick Lamar",
+        albumImage: "https://placehold.co/64x64/7e57c2/white?text=S1",
+        duration: "1:60",
+      ),
+    ];
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) return;
+    }
+    if (permission == LocationPermission.deniedForever) return;
+
+    GeoPoint? geolocation;
+
+    try {
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      geolocation = GeoPoint(position.latitude, position.longitude);
+    } catch (e) {
+      geolocation = null;
+    }
+
+    print("Geolocalização obtida: $geolocation");
+
+    final newPlaylist = Playlist(
+      userId: _currentUserId!, // Passa o ID do usuário logado
+      name: playlistName,
+      createdAt: DateTime.now(),
+      musics: newMusics,
+      geolocation: geolocation, // Adiciona o campo de geolocalização
+    );
+
+    String? docId = await _playlistManager.addPlaylist(newPlaylist);
+    if (docId != null) {
+      print("Playlist adicionada com sucesso! ID: $docId");
+    } else {
+      print("Falha ao adicionar playlist.");
+    }
+  }
+
+  void _createNewPlaylist(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder:
+            (context) => CreatePlaylistScreen(
+              onCreate: (String playlistName) async {
+                await _addExamplePlaylist(playlistName);
+              },
+            ),
+      ),
+    );
+  }
+
+  // Função para realizar o logout
+  Future<void> _logout() async {
+    try {
+      await FirebaseAuth.instance.signOut();
+      print("Usuário deslogado com sucesso!");
+      // Redireciona para a tela de login
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => LoginScreen()),
+      );
+    } catch (e) {
+      print("Erro ao deslogar: $e");
+      // Opcional: exibir uma mensagem de erro para o usuário
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erro ao deslogar: $e')));
+    }
+  }
+
+  void _createViewPlaylist(Playlist playlist) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext bc) {
+        return Container(
+          height: MediaQuery.of(bc).size.height * 0.5,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(25.0),
+              topRight: Radius.circular(25.0),
+            ),
+          ),
+          child: StatefulBuilder(
+            // Adiciona um StatefulBuilder aqui para gerenciar o estado local do modal
+            builder: (BuildContext context, StateSetter modalSetState) {
+              // Variável de estado local para o nome da playlist dentro deste modal.
+              // Ela é inicializada com o nome atual da playlist que foi passada para o onTap do ListTile.
+              String currentModalPlaylistName = playlist.name;
+
+              return Column(
+                children: <Widget>[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10.0),
+                    child: Container(
+                      height: 5.0,
+                      width: 40.0,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2.5),
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: <Widget>[
+                        const SizedBox(width: 15),
+                        Text(
+                          currentModalPlaylistName, // <-- Este Text agora usa a variável de estado local
+                          style: const TextStyle(fontSize: 26),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.edit, color: Colors.purple),
+                          tooltip: "Editar nome da playlist",
+                          onPressed: () async {
+                            String? novoNome = await showDialog<String>(
+                              context: context,
+                              builder: (dialogContext) {
+                                // O TextEditingController é inicializado com o nome atual do modal
+                                final _editController = TextEditingController(
+                                  text: currentModalPlaylistName,
+                                );
+                                return AlertDialog(
+                                  title: const Text('Editar nome da playlist'),
+                                  content: TextField(
+                                    controller: _editController,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Novo nome',
+                                    ),
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed:
+                                          () =>
+                                              Navigator.of(dialogContext).pop(),
+                                      child: const Text('Cancelar'),
+                                    ),
+                                    ElevatedButton(
+                                      onPressed: () {
+                                        Navigator.of(
+                                          dialogContext,
+                                        ).pop(_editController.text.trim());
+                                      },
+                                      child: const Text('Salvar'),
+                                    ),
+                                  ],
+                                );
+                              },
+                            );
+                            if (novoNome != null &&
+                                novoNome.isNotEmpty &&
+                                novoNome != currentModalPlaylistName) {
+                              // Cria uma cópia da playlist com o novo nome
+                              final updatedPlaylist = Playlist(
+                                id: playlist.id,
+                                userId: playlist.userId,
+                                name:
+                                    novoNome, // Usa o nome obtido do input do usuário
+                                createdAt: playlist.createdAt,
+                                musics: playlist.musics,
+                              );
+
+                              // Envia a atualização para o Firestore
+                              await _playlistManager.updatePlaylistForUser(
+                                updatedPlaylist,
+                                _currentUserId!,
+                              );
+                              modalSetState(() {
+                                currentModalPlaylistName = novoNome;
+                              });
+                            }
+                          },
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          icon: const FaIcon(
+                            FontAwesomeIcons.spotify,
+                            color: Colors.green,
+                            size: 30,
+                          ),
+                          onPressed:
+                              () =>
+                                  _spotifyManager.createAndOpenSpotifyPlaylist(
+                                    context,
+                                    _spotifyUserId!,
+                                    playlist.musics,
+                                    _spotifyToken!,
+                                    playlist.name,
+                                  ),
+                        ),
+                        const SizedBox(width: 10),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 13),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // ⬇️ ListView limitado por altura
+                            SizedBox(
+                              height: 300, // limite fixo ou dinâmico
+                              child: ListView.builder(
+                                itemCount: playlist.musics.length,
+                                itemBuilder: (context, index) {
+                                  final music = playlist.musics[index];
+                                  return ListTile(
+                                    leading: CircleAvatar(
+                                      backgroundImage: NetworkImage(
+                                        music.albumImage,
+                                      ),
+                                    ),
+                                    title: Text(music.title),
+                                    subtitle: Text(
+                                      '${music.artist} - ${music.duration}',
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+
+                            const SizedBox(height: 20),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16.0,
+                      vertical: 10.0,
+                    ),
+                    child: Align(
+                      alignment: Alignment.bottomRight,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          shape: const CircleBorder(),
+                          padding: const EdgeInsets.all(16),
+                        ),
+                        onPressed: () async {
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder:
+                                (context) => AlertDialog(
+                                  title: const Text('Deletar Playlist'),
+                                  content: const Text(
+                                    'Tem certeza que deseja deletar esta playlist?',
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed:
+                                          () =>
+                                              Navigator.of(context).pop(false),
+                                      child: const Text('Cancelar'),
+                                    ),
+                                    ElevatedButton(
+                                      onPressed:
+                                          () => Navigator.of(context).pop(true),
+                                      child: const Text('Deletar'),
+                                    ),
+                                  ],
+                                ),
+                          );
+                          if (confirm == true &&
+                              _currentUserId != null &&
+                              playlist.id != null) {
+                            Navigator.of(bc).pop(); // Fecha o bottom sheet
+                            await _playlistManager.deletePlaylistForUser(
+                              playlist.id!,
+                              _currentUserId!,
+                            );
+                          }
+                        },
+                        child: const Icon(Icons.delete), // Ícone centralizado
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      // Mostra um indicador de carregamento enquanto o UID não está pronto
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    if (_currentUserId == null) {
+      // Isso raramente aconteceria com o redirecionamento acima, mas é um fallback
+      return const Scaffold(
+        body: Center(child: Text('Erro: Usuário não autenticado.')),
+      );
+    }
     return Scaffold(
       appBar: AppBar(
-        title: Text('TuneTap'),
-        backgroundColor: Colors.purple,
+        title: const Text('Minhas playlists'),
+        backgroundColor: Colors.white,
         centerTitle: true,
+        leading: Builder(
+          builder: (BuildContext context) {
+            return IconButton(
+              onPressed: () {
+                Scaffold.of(context).openDrawer();
+              },
+              icon: const Icon(Icons.menu),
+              tooltip: "Menu de navegação",
+            );
+          },
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(4.0),
+          child: Container(
+            color: const Color.fromARGB(255, 204, 204, 204),
+            height: 1.0,
+          ),
+        ),
+      ),
+      drawer: Drawer(
+        child: Column(
+          children: <Widget>[
+            // Cabeçalho do Drawer (opcional, mas comum)
+            const DrawerHeader(
+              decoration: BoxDecoration(color: Colors.purple),
+              child: SizedBox(
+                width: double.infinity,
+                child: Text(
+                  'Menu',
+                  style: TextStyle(color: Colors.white, fontSize: 24),
+                ),
+              ),
+            ),
+            // Botão para o mapa de playlists
+            ListTile(
+              leading: const Icon(Icons.map),
+              title: const Text('Mapa de Playlists'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const MapaPlaylistsPage(),
+                  ),
+                );
+              },
+            ),
+            // Botão para integrar com o Spotify
+            ListTile(
+              leading: const FaIcon(
+                FontAwesomeIcons.spotify,
+                color: Colors.green,
+              ),
+              title: const Text('Integrar com Spotify'),
+              onTap: () async {
+                _spotifyToken = await _spotifyManager.authenticateWithSpotify();
+                _spotifyUserId = await _spotifyManager.getSpotifyUserId(
+                  _spotifyToken!,
+                );
+                print('Token do Spotify: $_spotifyToken');
+                print('User ID do Spotify: $_spotifyUserId');
+                if (_spotifyToken != null && _spotifyUserId != null) {
+                  Navigator.pop(context); // Fecha o Drawer
+
+                  // Aguarda o Drawer fechar antes de mostrar o SnackBar
+                  Future.delayed(Duration(milliseconds: 300), () {
+                    ScaffoldMessenger.of(context).clearSnackBars();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Conectado ao Spotify com sucesso!'),
+                        behavior: SnackBarBehavior.floating,
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  });
+                } else {
+                  Navigator.pop(context);
+
+                  Future.delayed(Duration(milliseconds: 300), () {
+                    ScaffoldMessenger.of(context).clearSnackBars();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Falha ao conectar ao Spotify.'),
+                        behavior: SnackBarBehavior.floating,
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  });
+                }
+              },
+            ),
+            const Spacer(), // Adiciona um espaço flexível para empurrar o botão de logout para o final
+            // Botão para deslogar
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: ListTile(
+                leading: const Icon(Icons.logout, color: Colors.red),
+                title: const Text('Sair', style: TextStyle(color: Colors.red)),
+                onTap: _logout, // Chama a função de logout
+              ),
+            ),
+            const SizedBox(height: 16), // Espaço para o final do drawer
+          ],
+        ),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              'Bem-vindo ao TuneTap!',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Colors.purple,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            SizedBox(height: 20),
-            ElevatedButton.icon(
-              onPressed: () => _createNewPlaylist(context),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.purple,
-                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              icon: Icon(Icons.add, color: Colors.white),
-              label: Text(
-                'Criar Nova Playlist',
-                style: TextStyle(fontSize: 18, color: Colors.white),
-              ),
-            ),
-            SizedBox(height: 30),
-            Text(
-              'Suas Playlists:',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
-              ),
-            ),
-            SizedBox(height: 10),
+            const SizedBox(height: 5),
             Expanded(
               child: ListView.builder(
-                itemCount: playlists.length,
+                itemCount: _playlists.length,
                 itemBuilder: (context, index) {
-                  final playlist = playlists[index]; 
                   return Card(
-                    margin: EdgeInsets.symmetric(vertical: 8.0),
+                    margin: const EdgeInsets.symmetric(vertical: 8.0),
                     child: ListTile(
-                      leading: Icon(Icons.music_note, color: Colors.purple),
+                      leading: const Icon(
+                        Icons.music_note,
+                        color: Colors.purple,
+                      ),
                       title: Text(
-                        playlist.name, 
-                        style: TextStyle(fontSize: 18),
+                        _playlists[index].name,
+                        style: const TextStyle(fontSize: 18),
                       ),
                       subtitle: Text(
-                        'Músicas: ${playlist.songs.length}', 
+                        'Músicas: ${_playlists[index].musics.length}',
                       ),
-                      trailing:
-                          Icon(Icons.arrow_forward_ios, color: Colors.grey),
-                      onTap: () { 
-                        Navigator.push( 
-                          context, 
-                          MaterialPageRoute( 
-                            builder: (context) => PlaylistDetailScreen(playlist: playlist), 
-                          ), 
-                        ); 
+                      trailing: const Icon(
+                        Icons.arrow_forward_ios,
+                        color: Colors.grey,
+                      ),
+                      onTap: () {
+                        _createViewPlaylist(_playlists[index]);
                       },
                     ),
                   );
@@ -554,193 +896,14 @@ class _HomePageState extends State<HomePage> {
           ],
         ),
       ),
-    );
-  }
-}
-
-class PlaylistDetailScreen extends StatelessWidget { 
-  final Playlist playlist; 
-
-  const PlaylistDetailScreen({Key? key, required this.playlist}) : super(key: key); 
-
-  @override 
-  Widget build(BuildContext context) { 
-    return Scaffold( 
-      appBar: AppBar( 
-        title: Text(playlist.name, style: TextStyle(color: Colors.white)), 
-        backgroundColor: Colors.purple, 
-        actions: [ 
-          IconButton( 
-            icon: Icon(Icons.map, color: Colors.white), 
-            onPressed: () { 
-              Navigator.push( 
-                context, 
-                MaterialPageRoute( 
-                  builder: (context) => PlaylistMapScreen(playlist: playlist), 
-                ), 
-              ); 
-            }, 
-          ), 
-        ], 
-      ), 
-      body: ListView.builder( 
-        itemCount: playlist.songs.length, 
-        itemBuilder: (context, index) { 
-          final song = playlist.songs[index]; 
-          return ListTile( 
-            leading: CircleAvatar( 
-              backgroundImage: NetworkImage(song.albumCoverUrl), 
-              radius: 30, 
-              backgroundColor: Colors.purple.withOpacity(0.1), 
-            ), 
-            title: Text(song.name), 
-            subtitle: Text(song.artist), 
-            trailing: Text(song.nationality), 
-          ); 
-        }, 
-      ), 
-    ); 
-  } 
-} 
-
-class PlaylistMapScreen extends StatefulWidget { 
-  final Playlist playlist; 
-
-  const PlaylistMapScreen({Key? key, required this.playlist}) : super(key: key); 
-
-  @override 
-  State<PlaylistMapScreen> createState() => _PlaylistMapScreenState(); 
-} 
-
-class _PlaylistMapScreenState extends State<PlaylistMapScreen> { 
-  @override 
-  Widget build(BuildContext context) { 
-    List<Marker> markers = widget.playlist.songs.map((song) { 
-      return Marker( 
-        width: 80.0, 
-        height: 80.0, 
-        point: song.location, 
-        child: Icon(Icons.music_note, color: Colors.red, size: 40.0), 
-      ); 
-    }).toList(); 
-
-    return Scaffold( 
-      appBar: AppBar( 
-        title: Text('Mapa da Playlist: ${widget.playlist.name}', style: TextStyle(color: Colors.white)), 
-        backgroundColor: Colors.purple, 
-      ), 
-      body: FlutterMap( 
-        options: MapOptions( 
-          initialCenter: widget.playlist.songs.isNotEmpty ? widget.playlist.songs.first.location : LatLng(0, 0), 
-          initialZoom: 2.0, 
-        ), 
-        children: [ 
-          TileLayer( 
-            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', 
-            userAgentPackageName: 'com.example.app', 
-          ), 
-          MarkerLayer(markers: markers), 
-        ], 
-      ), 
-    ); 
-  } 
-} 
-
-class CreatePlaylistScreen extends StatefulWidget {
-  final Function(String) onCreate;
-
-  CreatePlaylistScreen({required this.onCreate});
-
-  @override
-  _CreatePlaylistScreenState createState() => _CreatePlaylistScreenState();
-}
-
-class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
-  final _formKey = GlobalKey<FormState>();
-  String playlistName = '';
-  String mood = '';
-  String danceable = '';
-  int adventurous = 5;
-
-  void _submit() {
-    if (_formKey.currentState!.validate()) {
-      widget.onCreate(playlistName);
-      Navigator.pop(context);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title:
-            Text('Criar Nova Playlist', style: TextStyle(color: Colors.white)),
-        backgroundColor: Colors.purple,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TextFormField(
-                decoration: InputDecoration(labelText: 'Nome da Playlist'),
-                onChanged: (value) => playlistName = value,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Por favor, insira um nome';
-                  }
-                  return null;
-                },
-              ),
-              SizedBox(height: 20),
-              DropdownButtonFormField<String>(
-                decoration: InputDecoration(labelText: 'Agitado ou Calmo?'),
-                items: [
-                  DropdownMenuItem(value: 'Agitado', child: Text('Agitado')),
-                  DropdownMenuItem(value: 'Calmo', child: Text('Calmo')),
-                ],
-                onChanged: (value) => mood = value!,
-              ),
-              SizedBox(height: 20),
-              DropdownButtonFormField<String>(
-                decoration: InputDecoration(labelText: 'Dançante ou Não?'),
-                items: [
-                  DropdownMenuItem(value: 'Dançante', child: Text('Dançante')),
-                  DropdownMenuItem(value: 'Não', child: Text('Não')),
-                ],
-                onChanged: (value) => danceable = value!,
-              ),
-              SizedBox(height: 20),
-              Text('Numa escala de 1 a 10, quão aventureiro você quer?'),
-              Slider(
-                value: adventurous.toDouble(),
-                min: 1,
-                max: 10,
-                divisions: 9,
-                label: adventurous.toString(),
-                onChanged: (value) =>
-                    setState(() => adventurous = value.toInt()),
-              ),
-              SizedBox(height: 30),
-              ElevatedButton(
-                onPressed: _submit,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.purple,
-                  padding: EdgeInsets.symmetric(vertical: 15),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                child: Text(
-                  'Criar Playlist',
-                  style: TextStyle(fontSize: 18, color: Colors.white),
-                ),
-              ),
-            ],
-          ),
+      floatingActionButton: FloatingActionButton(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(30.0),
         ),
+        backgroundColor: Colors.white,
+        onPressed: () => _createNewPlaylist(context),
+        tooltip: "Adicionar nova playlist.",
+        child: const Icon(Icons.add, color: Colors.purple, size: 35),
       ),
     );
   }
