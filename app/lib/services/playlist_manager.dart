@@ -48,6 +48,21 @@ class PlaylistManager extends ChangeNotifier {
     }
   }
 
+Future<bool> toggleFavoriteForUser(Playlist playlist, String userId) async {
+  if (playlist.id == null) {
+    print('Erro: O ID da playlist não pode ser nulo para favoritar.');
+    return false;
+  }
+  try {
+    final isFavorite = playlist.isFavorite ?? false;
+    final updatedPlaylist = playlist.copyWith(isFavorite: !isFavorite);
+    return await updatePlaylistForUser(updatedPlaylist, userId);
+  } catch (e) {
+    print('Erro ao alternar favorito: $e');
+    return false;
+  }
+}
+
   Future<List<Playlist>> getPlaylistsForUser(String userId) async {
     try {
       QuerySnapshot querySnapshot = await _playlistsCollection
