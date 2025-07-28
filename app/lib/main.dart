@@ -37,7 +37,7 @@ class TuneTapApp extends StatelessWidget {
       title: 'TuneTap',
       theme: ThemeData(
         primarySwatch: Colors.purple,
-        scaffoldBackgroundColor: Colors.white,
+        scaffoldBackgroundColor: const Color(0xFFFFFFFF),
       ),
       home: StreamBuilder<User?>(
         stream:
@@ -380,6 +380,7 @@ class _HomePageState extends State<HomePage> {
   final SpotifyManager _spotifyManager = SpotifyManager();
   String? _spotifyToken;
   String? _spotifyUserId;
+  bool _showOnlyFavorites = false;
 
   @override
   void initState() {
@@ -413,6 +414,7 @@ class _HomePageState extends State<HomePage> {
       );
     }
   }
+
 
   Future<void> _addExamplePlaylist(String playlistName) async {
     if (_currentUserId == null) {
@@ -747,6 +749,11 @@ class _HomePageState extends State<HomePage> {
         body: Center(child: Text('Erro: Usuário não autenticado.')),
       );
     }
+
+    final displayedPlaylists = _showOnlyFavorites
+        ? _playlists.where((p) => p.isFavorite == true).toList()
+        : _playlists;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Minhas playlists'),
@@ -862,11 +869,30 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Text(
+                  'Apenas favoritos',
+                  style: TextStyle(fontSize: 16),
+                ),
+                Switch(
+                  value: _showOnlyFavorites,
+                  activeColor: Colors.purple,
+                  onChanged: (value) {
+                    setState(() {
+                      _showOnlyFavorites = value;
+                    });
+                  },
+                ),
+              ],
+            ),
             const SizedBox(height: 5),
             Expanded(
               child: ListView.builder(
-                itemCount: _playlists.length,
+                itemCount: displayedPlaylists.length,
                 itemBuilder: (context, index) {
+                  final playlist = displayedPlaylists[index];
                   return Card(
                     margin: const EdgeInsets.symmetric(vertical: 8.0),
                     child: ListTile(
@@ -875,18 +901,35 @@ class _HomePageState extends State<HomePage> {
                         color: Colors.purple,
                       ),
                       title: Text(
-                        _playlists[index].name,
+                        playlist.name,
                         style: const TextStyle(fontSize: 18),
                       ),
                       subtitle: Text(
-                        'Músicas: ${_playlists[index].musics.length}',
+                        'Músicas: ${playlist.musics.length}',
                       ),
-                      trailing: const Icon(
-                        Icons.arrow_forward_ios,
-                        color: Colors.grey,
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: Icon(
+                              playlist.isFavorite == true
+                                  ? Icons.favorite
+                                  : Icons.favorite_border,
+                              color: playlist.isFavorite == true
+                                  ? Colors.red
+                                  : Colors.grey,
+                            ),
+                            tooltip: 'Favoritar',
+                            onPressed: () => _playlistManager.toggleFavoriteForUser(playlist, _currentUserId!),
+                          ),
+                          const Icon(
+                            Icons.arrow_forward_ios,
+                            color: Colors.grey,
+                          ),
+                        ],
                       ),
                       onTap: () {
-                        _createViewPlaylist(_playlists[index]);
+                        _createViewPlaylist(playlist);
                       },
                     ),
                   );
@@ -903,7 +946,7 @@ class _HomePageState extends State<HomePage> {
         backgroundColor: Colors.white,
         onPressed: () => _createNewPlaylist(context),
         tooltip: "Adicionar nova playlist.",
-        child: const Icon(Icons.add, color: Colors.purple, size: 35),
+        child: const Icon(Icons.add, color: Color(0xFF9C27B0), size: 35),
       ),
     );
   }
