@@ -8,6 +8,7 @@ class Playlist {
   final DateTime createdAt;
   final List<Music> musics;
   final GeoPoint? geolocation;
+  final bool? isFavorite ;
 
   Playlist({
     this.id,
@@ -16,6 +17,7 @@ class Playlist {
     required this.createdAt,
     required this.musics,
     this.geolocation,
+    this.isFavorite,
   });
 
   factory Playlist.fromFirestore(DocumentSnapshot doc) {
@@ -30,6 +32,7 @@ class Playlist {
               .toList() ??
           [],
       geolocation: data['geolocation'] as GeoPoint?,
+      isFavorite: data['isFavorite'],
     );
   }
 
@@ -40,6 +43,7 @@ class Playlist {
       'createdAt': FieldValue.serverTimestamp(),
       'musics': musics.map((music) => music.toMap()).toList(),
       if (geolocation != null) 'geolocation': geolocation,
+      'isFavorite': isFavorite ?? false,
     };
   }
 
@@ -49,7 +53,28 @@ class Playlist {
       'name': name,
       'musics': musics.map((music) => music.toMap()).toList(),
       if (geolocation != null) 'geolocation': geolocation,
+      'isFavorite': isFavorite,
     };
+  }
+
+  Playlist copyWith({
+    String? id,
+    String? userId,
+    String? name,
+    DateTime? createdAt,
+    List<Music>? musics,
+    GeoPoint? geolocation,
+    bool? isFavorite,
+  }) {
+    return Playlist(
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      name: name ?? this.name,
+      createdAt: createdAt ?? this.createdAt,
+      musics: musics ?? this.musics,
+      geolocation: geolocation ?? this.geolocation,
+      isFavorite: isFavorite ?? this.isFavorite,
+    );
   }
 
 }
