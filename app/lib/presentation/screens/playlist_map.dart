@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/playlist_models.dart'; // ajuste o path conforme seu projeto
 import '../../services/playlist_manager.dart'; // ajuste o path conforme seu projeto
 
@@ -49,31 +50,48 @@ class _MapaPlaylistsPageState extends State<MapaPlaylistsPage> {
       _initialPosition = LatLng(position.latitude, position.longitude);
     });
 
-    _playlistManager.streamPlaylistsForAnotherUser(user.uid).listen((
-      playlists,
-    ) {
-      Set<Marker> newMarkers = {};
-      for (var playlist in playlists) {
-        if (playlist.geolocation != null) {
-          newMarkers.add(
-            Marker(
-              markerId: MarkerId(playlist.id ?? playlist.name),
-              position: LatLng(
-                playlist.geolocation!.latitude,
-                playlist.geolocation!.longitude,
-              ),
-              // infoWindow: InfoWindow(
-              //   title: playlist.name,
-              //   snippet: 'Músicas: ${playlist.musics.length}',
-              // ),
-              onTap: () => _createViewPlaylist(playlist),
-            ),
-          );
-        }
-      }
+    // Combine playlists do usuário e de outros usuários
+    _playlistManager.streamPlaylistsForUser(user.uid).listen((userPlaylists) {
+      _playlistManager.streamPlaylistsForAnotherUser(user.uid).listen((otherPlaylists) {
+        Set<Marker> newMarkers = {};
 
-      setState(() {
-        _markers = newMarkers;
+        // Adiciona playlists do usuário logado
+        for (var playlist in userPlaylists) {
+          if (playlist.geolocation != null) {
+            newMarkers.add(
+              Marker(
+                markerId: MarkerId(playlist.id ?? playlist.name),
+                position: LatLng(
+                  playlist.geolocation!.latitude,
+                  playlist.geolocation!.longitude,
+                ),
+                icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure), // cor diferente para o usuário
+                onTap: () => _createViewPlaylist(playlist),
+              ),
+            );
+          }
+        }
+
+        // Adiciona playlists de outros usuários
+        for (var playlist in otherPlaylists) {
+          if (playlist.geolocation != null) {
+            newMarkers.add(
+              Marker(
+                markerId: MarkerId(playlist.id ?? playlist.name),
+                position: LatLng(
+                  playlist.geolocation!.latitude,
+                  playlist.geolocation!.longitude,
+                ),
+                icon: BitmapDescriptor.defaultMarker, // cor padrão
+                onTap: () => _createViewPlaylist(playlist),
+              ),
+            );
+          }
+        }
+
+        setState(() {
+          _markers = newMarkers;
+        });
       });
     });
   }
@@ -98,7 +116,15 @@ class _MapaPlaylistsPageState extends State<MapaPlaylistsPage> {
 
   }
 
-  void _createViewPlaylist(Playlist playlist) {
+  void _createViewPlaylist(Playlist playlist) async {
+    String creatorName = 'Carregando...';
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(playlist.userId).get();
+      creatorName = doc.data()?['name'] ?? 'Anônimo';
+    } catch (_) {
+      creatorName = 'Anônimo';
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -120,9 +146,19 @@ class _MapaPlaylistsPageState extends State<MapaPlaylistsPage> {
                       children: [
                         Align(
                           alignment: Alignment.topLeft,
-                          child: Text(
-                            playlist.name,
-                            style: const TextStyle(fontSize: 26),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                playlist.name,
+                                style: const TextStyle(fontSize: 26),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Criador: $creatorName',
+                                style: const TextStyle(fontSize: 16, color: Colors.grey),
+                              ),
+                            ],
                           ),
                         ),
                         const SizedBox(height: 16),

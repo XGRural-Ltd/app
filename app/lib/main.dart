@@ -381,11 +381,22 @@ class _HomePageState extends State<HomePage> {
   String? _spotifyToken;
   String? _spotifyUserId;
   bool _showOnlyFavorites = false;
+  String? _userName;
 
   @override
   void initState() {
     super.initState();
     _initializeUserAndLoadPlaylists();
+    _loadUserName();
+  }
+
+  Future<void> _loadUserName() async {
+    if (_currentUserId != null) {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(_currentUserId).get();
+      setState(() {
+        _userName = doc.data()?['name'] ?? '';
+      });
+    }
   }
 
   Future<void> _initializeUserAndLoadPlaylists() async {
@@ -415,33 +426,118 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<Map<String, dynamic>?> _getSpotifyTrackInfo(String query, String token) async {
+    final url = Uri.https('api.spotify.com', '/v1/search', {
+      'q': query,
+      'type': 'track',
+      'limit': '1',
+    });
 
-  Future<void> _addExamplePlaylist(String playlistName) async {
+    final response = await http.get(
+      url,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      final tracks = data['tracks']['items'] as List<dynamic>;
+      if (tracks.isNotEmpty) {
+        return tracks[0];
+      }
+    }
+    return null;
+  }
+
+  Future<void> _addExamplePlaylist(String playlistName, String initialSong, String finalSong) async {
     if (_currentUserId == null) {
       print("Erro: Nenhum usuário logado para adicionar playlist.");
       return;
     }
 
-    final newMusics = [
-      Music(
-        title: "Bohemian Rhapsody",
-        artist: "Queen",
-        albumImage: "https://placehold.co/64x64/7e57c2/white?text=S1",
-        duration: "2:80",
-      ),
-      Music(
-        title: "Stairway to Heaven",
-        artist: "Led Zeppelin",
-        albumImage: "https://placehold.co/64x64/7e57c2/white?text=S1",
-        duration: "1:60",
-      ),
-      Music(
-        title: "Not Like Us",
-        artist: "Kendrick Lamar",
-        albumImage: "https://placehold.co/64x64/7e57c2/white?text=S1",
-        duration: "1:60",
-      ),
-    ];
+    final token = await _spotifyManager.getSavedSpotifyToken();
+    if (token == null) {
+      print("Token do Spotify não encontrado.");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Você precisa conectar ao Spotify!')),
+      );
+      return;
+    }
+
+    // Busca informações da música inicial
+    final initialInfo = await _getSpotifyTrackInfo(initialSong, token);
+    // Busca informações da música final
+    final finalInfo = await _getSpotifyTrackInfo(finalSong, token);
+
+    List<Music> newMusics = [];
+
+    if (initialInfo != null) {
+      newMusics.add(Music(
+        title: initialInfo['name'],
+        artist: (initialInfo['artists'] as List).isNotEmpty
+            ? initialInfo['artists'][0]['name']
+            : '',
+        albumImage: (initialInfo['album']?['images'] as List).isNotEmpty
+            ? initialInfo['album']['images'][0]['url']
+            : "https://placehold.co/64x64/7e57c2/white?text=S1",
+        duration: Duration(milliseconds: initialInfo['duration_ms'])
+            .toString()
+            .split('.')
+            .first
+            .substring(2, 7), // mm:ss
+      ));
+    }
+
+    // Adiciona 5 músicas aleatórias
+    final randomQueries = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'];
+    final usedTitles = <String>{
+      if (initialInfo != null) initialInfo['name'],
+      if (finalInfo != null) finalInfo['name'],
+    };
+
+    int added = 0;
+    int queryIndex = 0;
+    while (added < 5 && queryIndex < randomQueries.length) {
+      final randomInfo = await _getSpotifyTrackInfo(randomQueries[queryIndex], token);
+      queryIndex++;
+      if (randomInfo != null && !usedTitles.contains(randomInfo['name'])) {
+        newMusics.add(Music(
+          title: randomInfo['name'],
+          artist: (randomInfo['artists'] as List).isNotEmpty
+              ? randomInfo['artists'][0]['name']
+              : '',
+          albumImage: (randomInfo['album']?['images'] as List).isNotEmpty
+              ? randomInfo['album']['images'][0]['url']
+              : "https://placehold.co/64x64/7e57c2/white?text=S1",
+          duration: Duration(milliseconds: randomInfo['duration_ms'])
+              .toString()
+              .split('.')
+              .first
+              .substring(2, 7), // mm:ss
+        ));
+        usedTitles.add(randomInfo['name']);
+        added++;
+      }
+    }
+
+    if (finalInfo != null) {
+      newMusics.add(Music(
+        title: finalInfo['name'],
+        artist: (finalInfo['artists'] as List).isNotEmpty
+            ? finalInfo['artists'][0]['name']
+            : '',
+        albumImage: (finalInfo['album']?['images'] as List).isNotEmpty
+            ? finalInfo['album']['images'][0]['url']
+            : "https://placehold.co/64x64/7e57c2/white?text=S1",
+        duration: Duration(milliseconds: finalInfo['duration_ms'])
+            .toString()
+            .split('.')
+            .first
+            .substring(2, 7), // mm:ss
+      ));
+    }
 
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
@@ -464,11 +560,11 @@ class _HomePageState extends State<HomePage> {
     print("Geolocalização obtida: $geolocation");
 
     final newPlaylist = Playlist(
-      userId: _currentUserId!, // Passa o ID do usuário logado
+      userId: _currentUserId!,
       name: playlistName,
       createdAt: DateTime.now(),
       musics: newMusics,
-      geolocation: geolocation, // Adiciona o campo de geolocalização
+      geolocation: geolocation,
     );
 
     String? docId = await _playlistManager.addPlaylist(newPlaylist);
@@ -483,12 +579,11 @@ class _HomePageState extends State<HomePage> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder:
-            (context) => CreatePlaylistScreen(
-              onCreate: (String playlistName) async {
-                await _addExamplePlaylist(playlistName);
-              },
-            ),
+        builder: (context) => CreatePlaylistScreen(
+          onCreate: (String playlistName, String initialSong, String finalSong) async {
+            await _addExamplePlaylist(playlistName, initialSong, finalSong);
+          },
+        ),
       ),
     );
   }
@@ -781,16 +876,30 @@ class _HomePageState extends State<HomePage> {
       drawer: Drawer(
         child: Column(
           children: <Widget>[
-            // Cabeçalho do Drawer (opcional, mas comum)
-            const DrawerHeader(
-              decoration: BoxDecoration(color: Colors.purple),
-              child: SizedBox(
-                width: double.infinity,
-                child: Text(
-                  'Menu',
-                  style: TextStyle(color: Colors.white, fontSize: 24),
-                ),
+            // Cabeçalho do Drawer com nome do usuário
+            UserAccountsDrawerHeader(
+              decoration: const BoxDecoration(color: Colors.purple),
+              accountName: Text(
+                _userName ?? 'Carregando...',
+                style: const TextStyle(fontSize: 22),
               ),
+              accountEmail: null,
+              currentAccountPicture: const CircleAvatar(
+                backgroundColor: Colors.white,
+                child: Icon(Icons.person, color: Colors.purple, size: 40),
+              ),
+            ),
+            // Botão para configurações
+            ListTile(
+              leading: const Icon(Icons.settings),
+              title: const Text('Configurações'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => SettingsScreen(userId: _currentUserId!)),
+                ).then((_) => _loadUserName()); // Atualiza nome ao voltar
+              },
             ),
             // Botão para o mapa de playlists
             ListTile(
@@ -947,6 +1056,89 @@ class _HomePageState extends State<HomePage> {
         onPressed: () => _createNewPlaylist(context),
         tooltip: "Adicionar nova playlist.",
         child: const Icon(Icons.add, color: Color(0xFF9C27B0), size: 35),
+      ),
+    );
+  }
+}
+
+class SettingsScreen extends StatefulWidget {
+  final String userId;
+  const SettingsScreen({super.key, required this.userId});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCurrentName();
+  }
+
+  Future<void> _loadCurrentName() async {
+    final doc = await FirebaseFirestore.instance.collection('users').doc(widget.userId).get();
+    _nameController.text = doc.data()?['name'] ?? '';
+  }
+
+  Future<void> _saveName() async {
+    if (_formKey.currentState!.validate()) {
+      setState(() => _loading = true);
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.userId)
+          .update({'name': _nameController.text.trim()});
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nome atualizado com sucesso!')),
+      );
+      Navigator.pop(context);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Configurações'),
+        backgroundColor: Colors.purple,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              TextFormField(
+                controller: _nameController,
+                decoration: const InputDecoration(labelText: 'Nome'),
+                validator: (value) =>
+                    value == null || value.isEmpty ? 'Digite seu nome' : null,
+              ),
+              const SizedBox(height: 30),
+              _loading
+                  ? const CircularProgressIndicator()
+                  : ElevatedButton(
+                      onPressed: _saveName,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.purple,
+                        padding: const EdgeInsets.symmetric(vertical: 15),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: const Text(
+                        'Salvar',
+                        style: TextStyle(fontSize: 18, color: Colors.white),
+                      ),
+                    ),
+            ],
+          ),
+        ),
       ),
     );
   }

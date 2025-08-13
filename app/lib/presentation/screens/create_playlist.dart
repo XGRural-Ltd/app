@@ -3,9 +3,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:app/services/spotify_manager.dart';
 
 class CreatePlaylistScreen extends StatefulWidget {
-  final Function(String) onCreate;
+  final Function(String, String, String) onCreate; // nome, música inicial, música final
 
   CreatePlaylistScreen({required this.onCreate});
 
@@ -20,9 +21,88 @@ class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
   String danceable = '';
   int adventurous = 5;
 
+  String? initialSong;
+  String? finalSong;
+
+  final TextEditingController _initialSongController = TextEditingController();
+  final TextEditingController _finalSongController = TextEditingController();
+
+  final SpotifyManager _spotifyManager = SpotifyManager();
+
+  Future<void> _searchAndSelectSong(TextEditingController controller) async {
+    String? selected = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        String query = '';
+        List<Map<String, dynamic>> results = [];
+        bool isLoading = false;
+
+        return StatefulBuilder(
+          builder: (context, setState) => AlertDialog(
+            title: Text('Buscar música no Spotify'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    decoration: InputDecoration(labelText: 'Nome da música'),
+                    onChanged: (value) => query = value,
+                  ),
+                  SizedBox(height: 10),
+                  ElevatedButton(
+                    onPressed: () async {
+                      setState(() => isLoading = true);
+                      final token = await _spotifyManager.getSavedSpotifyToken();
+                      if (token == null) {
+                        setState(() => isLoading = false);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Você precisa conectar ao Spotify!')),
+                        );
+                        return;
+                      }
+                      results = await _spotifyManager.searchTracks(query, token);
+                      setState(() => isLoading = false);
+                    },
+                    child: Text('Buscar'),
+                  ),
+                  if (isLoading) CircularProgressIndicator(),
+                  if (!isLoading && results.isNotEmpty)
+                    Flexible(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: results.length,
+                        itemBuilder: (context, index) {
+                          final track = results[index];
+                          return ListTile(
+                            title: Text(track['name']),
+                            subtitle: Text(track['artist']),
+                            onTap: () {
+                              Navigator.of(context).pop('${track['name']} - ${track['artist']}');
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    if (selected != null) {
+      controller.text = selected;
+    }
+  }
+
   void _submit() {
     if (_formKey.currentState!.validate()) {
-      widget.onCreate(playlistName);
+      widget.onCreate(
+        playlistName,
+        _initialSongController.text,
+        _finalSongController.text,
+      );
       Navigator.pop(context);
     }
   }
@@ -67,13 +147,51 @@ class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
                   },
                 ),
                 SizedBox(height: 20),
-                TextFormField(
-                  decoration: InputDecoration(labelText: 'Música inicial'),
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _initialSongController,
+                        decoration: InputDecoration(labelText: 'Música inicial'),
+                        readOnly: true,
+                        onTap: () => _searchAndSelectSong(_initialSongController),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Selecione a música inicial';
+                          }
+                          return null;
+                        },
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.search, color: Colors.purple),
+                      onPressed: () => _searchAndSelectSong(_initialSongController),
+                    ),
+                  ],
+                ),
                 SizedBox(height: 20),
-                TextFormField(
-                  decoration: InputDecoration(labelText: 'Música final'),
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _finalSongController,
+                        decoration: InputDecoration(labelText: 'Música final'),
+                        readOnly: true,
+                        onTap: () => _searchAndSelectSong(_finalSongController),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Selecione a música final';
+                          }
+                          return null;
+                        },
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.search, color: Colors.purple),
+                      onPressed: () => _searchAndSelectSong(_finalSongController),
+                    ),
+                  ],
+                ),
                 SizedBox(height: 20),
                 DropdownButtonFormField<String>(
                   decoration: InputDecoration(labelText: 'Heterogeneidade'),
