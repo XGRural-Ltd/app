@@ -10,6 +10,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class SpotifyManager {
+  String? _lastCodeVerifier; // Adicione esta variável de instância
+
   String _generateCodeVerifier() {
     final random = Random.secure();
     final values = List<int>.generate(64, (i) => random.nextInt(256));
@@ -32,6 +34,11 @@ class SpotifyManager {
     await prefs.remove('spotify_access_token');
   }
 
+  Future<String?> getSavedSpotifyToken() async {
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getString('spotify_access_token');
+  }
+  
   Future<String> getSpotifyUserId(String token) async {
     final response = await http.get(
       Uri.parse('https://api.spotify.com/v1/me'),
@@ -185,12 +192,14 @@ class SpotifyManager {
   }
 
   Future<String?> authenticateWithSpotify() async {
-    final clientId = '7ef38e7a542a41979001c6f52fb05c14';
+    final clientId = 'c02086dc4e6441ca93a58d2ad03fc62a';
     final redirectUri = 'tunetap://callback';
     final scopes =
         'playlist-modify-public playlist-modify-private user-read-private';
 
+    // Gere e salve o code_verifier para este fluxo
     final codeVerifier = _generateCodeVerifier();
+    _lastCodeVerifier = codeVerifier; // Salve aqui!
     final codeChallenge = _generateCodeChallenge(codeVerifier);
 
     final authUrl =
@@ -223,6 +232,7 @@ class SpotifyManager {
           final code = uri.queryParameters['code'];
           print('Código de autorização: $code');
 
+          // Use o code_verifier salvo!
           final tokenResponse = await http.post(
             Uri.parse('https://accounts.spotify.com/api/token'),
             headers: {'Content-Type': 'application/x-www-form-urlencoded'},
@@ -231,7 +241,7 @@ class SpotifyManager {
               'code': code!,
               'redirect_uri': redirectUri,
               'client_id': clientId,
-              'code_verifier': codeVerifier,
+              'code_verifier': _lastCodeVerifier!, // Use o salvo
             },
           );
 
@@ -239,6 +249,7 @@ class SpotifyManager {
             final json = jsonDecode(tokenResponse.body);
             final token = json['access_token'];
             print('Token de acesso obtido: $token');
+            await saveSpotifyToken(token);
             _linkSubscription?.cancel();
             completer.complete(token);
           } else {
@@ -256,4 +267,37 @@ class SpotifyManager {
     );
     return completer.future;
   }
+
+  Future<List<Map<String, dynamic>>> searchTracks(String query, String accessToken) async {
+  final url = Uri.https('api.spotify.com', '/v1/search', {
+    'q': query,
+    'type': 'track',
+    'limit': '10',
+  });
+
+  final response = await http.get(
+    url,
+    headers: {
+      'Authorization': 'Bearer $accessToken',
+      'Content-Type': 'application/json',
+    },
+  );
+
+  if (response.statusCode == 200) {
+    final data = json.decode(response.body);
+    final tracks = data['tracks']['items'] as List<dynamic>;
+    return tracks.map<Map<String, dynamic>>((track) {
+      return {
+        'name': track['name'],
+        'artist': (track['artists'] as List).isNotEmpty
+            ? track['artists'][0]['name']
+            : '',
+      };
+    }).toList();
+  } else {
+    print('Erro ao buscar músicas no Spotify: ${response.body}');
+    return [];
+  }
+}
+
 }
