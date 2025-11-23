@@ -130,7 +130,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 width: double.infinity,
                 height: 350,
                 child: Image.network(
-                  "https://storage.googleapis.com/tune-tap-app-images/tunetap_logo_transparent.png",
+                  "https://storage.googleapis.com/tunetap_bucket/tunetap_logo_transparent.png",
                 ),
               ),
               SizedBox(height: 40),
@@ -414,32 +414,85 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _addExamplePlaylist(String playlistName) async {
+  Future<void> _addExamplePlaylist(String playlistName, String initialSong) async {
     if (_currentUserId == null) {
       print("Erro: Nenhum usuário logado para adicionar playlist.");
       return;
     }
 
-    final newMusics = [
+    List<Music> newMusics = [];
+
+try {
+  final uri = Uri.parse("http://35.193.101.46:5000/recommend");
+  final response = await http.post(
+    uri,
+    headers: {'Content-Type': 'application/json'},
+    body: jsonEncode({'track_1': initialSong}),
+  );
+
+  if (response.statusCode == 200) {
+    final body = jsonDecode(response.body);
+
+    // Esperado:
+    // {
+    //   "recommended": [
+    //     { "artists": "Artist X", "track_name": "Song X", "duration_ms": 185000 },
+    //     ...
+    //   ]
+    // }
+
+    final rec = body["recommended"];
+    print("Recomendadas: $rec");
+
+    if (rec is List) {
+      newMusics = rec.map<Music>((item) {
+        final title = item["track_name"] ?? initialSong;
+        final artist = item["artists"] ?? "Unknown Artist";
+
+        // --- duration conversion (ms → mm:ss) ---
+        int durationMs = item["duration_ms"] ?? 0;
+        String duration = "";
+
+        if (durationMs > 0) {
+          final totalSeconds = (durationMs / 1000).round();
+          final minutes = totalSeconds ~/ 60;
+          final seconds = totalSeconds % 60;
+
+          duration = "$minutes:${seconds.toString().padLeft(2, '0')}";
+        }
+
+        const albumImage = "https://placehold.co/64x64/7e57c2/white?text=S";
+
+        print("Processando '${title}' por ${artist} — duração: $duration");
+
+        return Music(
+          title: title,
+          artist: artist,
+          albumImage: albumImage,
+          duration: duration,
+        );
+      }).toList();
+    }
+  } else {
+    newMusics = [
       Music(
-        title: "Bohemian Rhapsody",
-        artist: "Queen",
-        albumImage: "https://placehold.co/64x64/7e57c2/white?text=S1",
-        duration: "2:80",
-      ),
-      Music(
-        title: "Stairway to Heaven",
-        artist: "Led Zeppelin",
-        albumImage: "https://placehold.co/64x64/7e57c2/white?text=S1",
-        duration: "1:60",
-      ),
-      Music(
-        title: "Not Like Us",
-        artist: "Kendrick Lamar",
-        albumImage: "https://placehold.co/64x64/7e57c2/white?text=S1",
-        duration: "1:60",
-      ),
+        title: initialSong,
+        artist: "Unknown Artist",
+        albumImage: "https://placehold.co/64x64/7e57c2/white?text=S",
+        duration: "",
+      )
     ];
+  }
+} catch (e) {
+  newMusics = [
+    Music(
+      title: initialSong,
+      artist: "Unknown Artist",
+      albumImage: "https://placehold.co/64x64/7e57c2/white?text=S",
+      duration: "",
+    )
+  ];
+}
 
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
@@ -483,8 +536,8 @@ class _HomePageState extends State<HomePage> {
       MaterialPageRoute(
         builder:
             (context) => CreatePlaylistScreen(
-              onCreate: (String playlistName) async {
-                await _addExamplePlaylist(playlistName);
+              onCreate: (String playlistName, String initialSong) async {
+                await _addExamplePlaylist(playlistName, initialSong);
               },
             ),
       ),

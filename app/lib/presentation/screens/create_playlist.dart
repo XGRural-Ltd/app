@@ -5,7 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 class CreatePlaylistScreen extends StatefulWidget {
-  final Function(String) onCreate;
+  final void Function(String, String) onCreate;
 
   CreatePlaylistScreen({required this.onCreate});
 
@@ -16,13 +16,14 @@ class CreatePlaylistScreen extends StatefulWidget {
 class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
   final _formKey = GlobalKey<FormState>();
   String playlistName = '';
+  String initialSong = '';
   String mood = '';
   String danceable = '';
   int adventurous = 5;
 
   void _submit() {
     if (_formKey.currentState!.validate()) {
-      widget.onCreate(playlistName);
+      widget.onCreate(playlistName, initialSong);
       Navigator.pop(context);
     }
   }
@@ -69,30 +70,31 @@ class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
                 SizedBox(height: 20),
                 TextFormField(
                   decoration: InputDecoration(labelText: 'Música inicial'),
+                  onChanged: (value) => initialSong = value
                   ),
-                SizedBox(height: 20),
-                TextFormField(
-                  decoration: InputDecoration(labelText: 'Música final'),
-                  ),
-                SizedBox(height: 20),
-                DropdownButtonFormField<String>(
-                  decoration: InputDecoration(labelText: 'Heterogeneidade'),
-                  items: [
-                    DropdownMenuItem(value: 'Sim', child: Text('Sim')),
-                    DropdownMenuItem(value: 'Não', child: Text('Não')),
-                  ],
-                  onChanged: (value) => danceable = value!,
-                ),
-                SizedBox(height: 20),
-                Text('Duração estimada (min)'),
-                Slider(
-                  value: adventurous.toDouble(),
-                  min: 1,
-                  max: 10,
-                  divisions: 9,
-                  label: adventurous.toString(),
-                  onChanged: (value) => setState(() => adventurous = value.toInt()),
-                ),
+                //SizedBox(height: 20),
+                //TextFormField(
+                  //decoration: InputDecoration(labelText: 'Música final'),
+                  //),
+                //SizedBox(height: 20),
+                //DropdownButtonFormField<String>(
+                  //decoration: InputDecoration(labelText: 'Heterogeneidade'),
+                  //items: [
+                    //DropdownMenuItem(value: 'Sim', child: Text('Sim')),
+                    //DropdownMenuItem(value: 'Não', child: Text('Não')),
+                  //],
+                  //onChanged: (value) => danceable = value!,
+                //),
+                //SizedBox(height: 20),
+                //Text('Duração estimada (min)'),
+                //Slider(
+                  //value: adventurous.toDouble(),
+                  //min: 1,
+                  //max: 10,
+                  //divisions: 9,
+                  //label: adventurous.toString(),
+                  //onChanged: (value) => setState(() => adventurous = value.toInt()),
+                //),
                 SizedBox(height: 30),
                 ElevatedButton(
                   onPressed: _submit,
