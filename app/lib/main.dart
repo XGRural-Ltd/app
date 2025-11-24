@@ -470,7 +470,7 @@ class _HomePageState extends State<HomePage> {
     List<Music> newMusics = [];
     
 try {
-  final uri = Uri.parse("http://35.193.101.46:5000/recommend");
+  final uri = Uri.parse("http://35.238.38.246:5000/recommend");
   final response = await http.post(
     uri,
     headers: {'Content-Type': 'application/json'},
@@ -720,15 +720,37 @@ try {
                             color: Colors.green,
                             size: 30,
                           ),
-                          onPressed:
-                              () =>
-                                  _spotifyManager.createAndOpenSpotifyPlaylist(
-                                    context,
-                                    _spotifyUserId!,
-                                    playlist.musics,
-                                    _spotifyToken!,
-                                    playlist.name,
-                                  ),
+                          onPressed: () async {
+                            // Verifica se o usuário está conectado ao Spotify
+                            if (_spotifyToken == null || _spotifyUserId == null) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Conecte-se ao Spotify antes de exportar a playlist.'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                              return;
+                            }
+
+                            try {
+                              await _spotifyManager.createAndOpenSpotifyPlaylist(
+                                context,
+                                _spotifyUserId!,
+                                playlist.musics,
+                                _spotifyToken!,
+                                playlist.name,
+                              );
+                            } catch (e, st) {
+                              // Log para depuração e feedback ao usuário
+                              print('Erro ao exportar playlist para Spotify: $e\n$st');
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Erro ao exportar para Spotify: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          },
                         ),
                         const SizedBox(width: 10),
                       ],

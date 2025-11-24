@@ -76,7 +76,7 @@ class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
                             title: Text(track['name']),
                             subtitle: Text(track['artist']),
                             onTap: () {
-                              Navigator.of(context).pop('${track['name']} - ${track['artist']}');
+                              Navigator.of(context).pop('${track['name']}');
                             },
                           );
                         },
