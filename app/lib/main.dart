@@ -130,7 +130,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 width: double.infinity,
                 height: 350,
                 child: Image.network(
-                  "https://storage.googleapis.com/tune-tap-app-images/tunetap_logo_transparent.png",
+                  "https://storage.googleapis.com/tunetap_bucket/tunetap_logo_transparent.png",
                 ),
               ),
               SizedBox(height: 40),
@@ -451,11 +451,11 @@ class _HomePageState extends State<HomePage> {
     return null;
   }
 
-  Future<void> _addExamplePlaylist(String playlistName, String initialSong, String finalSong) async {
+  Future<void> _addExamplePlaylist(String playlistName, String initialSong) async {
     if (_currentUserId == null) {
       print("Erro: Nenhum usuário logado para adicionar playlist.");
       return;
-    }
+    } else { print('Logado com sucesso');}
 
     final token = await _spotifyManager.getSavedSpotifyToken();
     if (token == null) {
@@ -464,43 +464,42 @@ class _HomePageState extends State<HomePage> {
         SnackBar(content: Text('Você precisa conectar ao Spotify!')),
       );
       return;
-    }
+    } else {print('Token do Spotify obtido com sucesso');}
 
-    // Busca informações da música inicial
-    final initialInfo = await _getSpotifyTrackInfo(initialSong, token);
-    // Busca informações da música final
-    final finalInfo = await _getSpotifyTrackInfo(finalSong, token);
-
+// Busca informações da música inicial
     List<Music> newMusics = [];
+    
+try {
+  final uri = Uri.parse("http://35.193.101.46:5000/recommend");
+  final response = await http.post(
+    uri,
+    headers: {'Content-Type': 'application/json'},
+    body: jsonEncode({'track_1': initialSong}),
+  );
 
-    if (initialInfo != null) {
-      newMusics.add(Music(
-        title: initialInfo['name'],
-        artist: (initialInfo['artists'] as List).isNotEmpty
-            ? initialInfo['artists'][0]['name']
-            : '',
-        albumImage: (initialInfo['album']?['images'] as List).isNotEmpty
-            ? initialInfo['album']['images'][0]['url']
-            : "https://placehold.co/64x64/7e57c2/white?text=S1",
-        duration: Duration(milliseconds: initialInfo['duration_ms'])
-            .toString()
-            .split('.')
-            .first
-            .substring(2, 7), // mm:ss
-      ));
-    }
+  if (response.statusCode == 200) {
+    final body = jsonDecode(response.body);
+
+    // Esperado:
+    // {
+    //   "recommended": [
+    //     { "artists": "Artist X", "track_name": "Song X", "duration_ms": 185000 },
+    //     ...
+    //   ]
+    // }
+  
+    final rec = body["recommended"];
+    print("Recomendadas: $rec");
+  
+   
 
     // Adiciona 5 músicas aleatórias
-    final randomQueries = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'];
-    final usedTitles = <String>{
-      if (initialInfo != null) initialInfo['name'],
-      if (finalInfo != null) finalInfo['name'],
-    };
+    final usedTitles = <String>{};
 
     int added = 0;
     int queryIndex = 0;
-    while (added < 5 && queryIndex < randomQueries.length) {
-      final randomInfo = await _getSpotifyTrackInfo(randomQueries[queryIndex], token);
+    while (added < 5 ) {
+      final randomInfo = await _getSpotifyTrackInfo(rec[queryIndex]["track_name"], token);
       queryIndex++;
       if (randomInfo != null && !usedTitles.contains(randomInfo['name'])) {
         newMusics.add(Music(
@@ -521,23 +520,24 @@ class _HomePageState extends State<HomePage> {
         added++;
       }
     }
-
-    if (finalInfo != null) {
-      newMusics.add(Music(
-        title: finalInfo['name'],
-        artist: (finalInfo['artists'] as List).isNotEmpty
-            ? finalInfo['artists'][0]['name']
-            : '',
-        albumImage: (finalInfo['album']?['images'] as List).isNotEmpty
-            ? finalInfo['album']['images'][0]['url']
-            : "https://placehold.co/64x64/7e57c2/white?text=S1",
-        duration: Duration(milliseconds: finalInfo['duration_ms'])
-            .toString()
-            .split('.')
-            .first
-            .substring(2, 7), // mm:ss
-      ));
-    }
+  }
+} catch (e) {
+ final musicInfo = await _getSpotifyTrackInfo(initialSong, token); 
+ newMusics.add(Music(
+          title: musicInfo?['name'],
+          artist: (musicInfo?['artists'] as List).isNotEmpty
+              ? musicInfo?['artists'][0]?['name']
+              : '',
+          albumImage: (musicInfo!['album']?['images'] as List).isNotEmpty
+              ? musicInfo['album']['images'][0]['url']
+              : "https://placehold.co/64x64/7e57c2/white?text=S1",
+          duration: Duration(milliseconds: musicInfo['duration_ms'])
+              .toString()
+              .split('.')
+              .first
+              .substring(2, 7), // mm:ss
+        ));
+}
 
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
@@ -560,11 +560,11 @@ class _HomePageState extends State<HomePage> {
     print("Geolocalização obtida: $geolocation");
 
     final newPlaylist = Playlist(
-      userId: _currentUserId!,
+      userId: _currentUserId!, // Passa o ID do usuário logado
       name: playlistName,
       createdAt: DateTime.now(),
       musics: newMusics,
-      geolocation: geolocation,
+      geolocation: geolocation, // Adiciona o campo de geolocalização
     );
 
     String? docId = await _playlistManager.addPlaylist(newPlaylist);
@@ -580,8 +580,8 @@ class _HomePageState extends State<HomePage> {
       context,
       MaterialPageRoute(
         builder: (context) => CreatePlaylistScreen(
-          onCreate: (String playlistName, String initialSong, String finalSong) async {
-            await _addExamplePlaylist(playlistName, initialSong, finalSong);
+          onCreate: (String playlistName, String initialSong) async {
+            await _addExamplePlaylist(playlistName, initialSong);
           },
         ),
       ),

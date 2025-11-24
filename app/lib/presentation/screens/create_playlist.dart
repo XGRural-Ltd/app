@@ -6,7 +6,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:app/services/spotify_manager.dart';
 
 class CreatePlaylistScreen extends StatefulWidget {
-  final Function(String, String, String) onCreate; // nome, música inicial, música final
+  final void Function(String, String) onCreate; // nome, música inicial
 
   CreatePlaylistScreen({required this.onCreate});
 
@@ -22,10 +22,8 @@ class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
   int adventurous = 5;
 
   String? initialSong;
-  String? finalSong;
 
   final TextEditingController _initialSongController = TextEditingController();
-  final TextEditingController _finalSongController = TextEditingController();
 
   final SpotifyManager _spotifyManager = SpotifyManager();
 
@@ -101,7 +99,6 @@ class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
       widget.onCreate(
         playlistName,
         _initialSongController.text,
-        _finalSongController.text,
       );
       Navigator.pop(context);
     }
@@ -169,48 +166,7 @@ class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
                     ),
                   ],
                 ),
-                SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: _finalSongController,
-                        decoration: InputDecoration(labelText: 'Música final'),
-                        readOnly: true,
-                        onTap: () => _searchAndSelectSong(_finalSongController),
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Selecione a música final';
-                          }
-                          return null;
-                        },
-                      ),
-                    ),
-                    IconButton(
-                      icon: Icon(Icons.search, color: Colors.purple),
-                      onPressed: () => _searchAndSelectSong(_finalSongController),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 20),
-                DropdownButtonFormField<String>(
-                  decoration: InputDecoration(labelText: 'Heterogeneidade'),
-                  items: [
-                    DropdownMenuItem(value: 'Sim', child: Text('Sim')),
-                    DropdownMenuItem(value: 'Não', child: Text('Não')),
-                  ],
-                  onChanged: (value) => danceable = value!,
-                ),
-                SizedBox(height: 20),
-                Text('Duração estimada (min)'),
-                Slider(
-                  value: adventurous.toDouble(),
-                  min: 1,
-                  max: 10,
-                  divisions: 9,
-                  label: adventurous.toString(),
-                  onChanged: (value) => setState(() => adventurous = value.toInt()),
-                ),
+
                 SizedBox(height: 30),
                 ElevatedButton(
                   onPressed: _submit,
