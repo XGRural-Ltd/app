@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:app/models/music_models.dart';
 import 'package:app/models/playlist_models.dart';
 import 'package:app/presentation/screens/playlist_map.dart';
+import 'package:app/presentation/screens/playlist_info.dart';
 import 'package:app/services/playlist_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -20,6 +21,8 @@ import 'presentation/screens/create_playlist.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:app/services/spotify_manager.dart';
+import 'presentation/screens/social_screen.dart';
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -607,251 +610,7 @@ try {
     }
   }
 
-  void _createViewPlaylist(Playlist playlist) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (BuildContext bc) {
-        return Container(
-          height: MediaQuery.of(bc).size.height * 0.5,
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.only(
-              topLeft: Radius.circular(25.0),
-              topRight: Radius.circular(25.0),
-            ),
-          ),
-          child: StatefulBuilder(
-            // Adiciona um StatefulBuilder aqui para gerenciar o estado local do modal
-            builder: (BuildContext context, StateSetter modalSetState) {
-              // Variável de estado local para o nome da playlist dentro deste modal.
-              // Ela é inicializada com o nome atual da playlist que foi passada para o onTap do ListTile.
-              String currentModalPlaylistName = playlist.name;
-
-              return Column(
-                children: <Widget>[
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10.0),
-                    child: Container(
-                      height: 5.0,
-                      width: 40.0,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[300],
-                        borderRadius: BorderRadius.circular(2.5),
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: <Widget>[
-                        const SizedBox(width: 15),
-                        Text(
-                          currentModalPlaylistName, // <-- Este Text agora usa a variável de estado local
-                          style: const TextStyle(fontSize: 26),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.edit, color: Colors.purple),
-                          tooltip: "Editar nome da playlist",
-                          onPressed: () async {
-                            String? novoNome = await showDialog<String>(
-                              context: context,
-                              builder: (dialogContext) {
-                                // O TextEditingController é inicializado com o nome atual do modal
-                                final _editController = TextEditingController(
-                                  text: currentModalPlaylistName,
-                                );
-                                return AlertDialog(
-                                  title: const Text('Editar nome da playlist'),
-                                  content: TextField(
-                                    controller: _editController,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Novo nome',
-                                    ),
-                                  ),
-                                  actions: [
-                                    TextButton(
-                                      onPressed:
-                                          () =>
-                                              Navigator.of(dialogContext).pop(),
-                                      child: const Text('Cancelar'),
-                                    ),
-                                    ElevatedButton(
-                                      onPressed: () {
-                                        Navigator.of(
-                                          dialogContext,
-                                        ).pop(_editController.text.trim());
-                                      },
-                                      child: const Text('Salvar'),
-                                    ),
-                                  ],
-                                );
-                              },
-                            );
-                            if (novoNome != null &&
-                                novoNome.isNotEmpty &&
-                                novoNome != currentModalPlaylistName) {
-                              // Cria uma cópia da playlist com o novo nome
-                              final updatedPlaylist = Playlist(
-                                id: playlist.id,
-                                userId: playlist.userId,
-                                name:
-                                    novoNome, // Usa o nome obtido do input do usuário
-                                createdAt: playlist.createdAt,
-                                musics: playlist.musics,
-                              );
-
-                              // Envia a atualização para o Firestore
-                              await _playlistManager.updatePlaylistForUser(
-                                updatedPlaylist,
-                                _currentUserId!,
-                              );
-                              modalSetState(() {
-                                currentModalPlaylistName = novoNome;
-                              });
-                            }
-                          },
-                        ),
-                        const Spacer(),
-                        IconButton(
-                          icon: const FaIcon(
-                            FontAwesomeIcons.spotify,
-                            color: Colors.green,
-                            size: 30,
-                          ),
-                          onPressed: () async {
-                            // Verifica se o usuário está conectado ao Spotify
-                            if (_spotifyToken == null || _spotifyUserId == null) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Conecte-se ao Spotify antes de exportar a playlist.'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                              return;
-                            }
-
-                            try {
-                              await _spotifyManager.createAndOpenSpotifyPlaylist(
-                                context,
-                                _spotifyUserId!,
-                                playlist.musics,
-                                _spotifyToken!,
-                                playlist.name,
-                              );
-                            } catch (e, st) {
-                              // Log para depuração e feedback ao usuário
-                              print('Erro ao exportar playlist para Spotify: $e\n$st');
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Erro ao exportar para Spotify: $e'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            }
-                          },
-                        ),
-                        const SizedBox(width: 10),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 13),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // ⬇️ ListView limitado por altura
-                            SizedBox(
-                              height: 300, // limite fixo ou dinâmico
-                              child: ListView.builder(
-                                itemCount: playlist.musics.length,
-                                itemBuilder: (context, index) {
-                                  final music = playlist.musics[index];
-                                  return ListTile(
-                                    leading: CircleAvatar(
-                                      backgroundImage: NetworkImage(
-                                        music.albumImage,
-                                      ),
-                                    ),
-                                    title: Text(music.title),
-                                    subtitle: Text(
-                                      '${music.artist} - ${music.duration}',
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-
-                            const SizedBox(height: 20),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16.0,
-                      vertical: 10.0,
-                    ),
-                    child: Align(
-                      alignment: Alignment.bottomRight,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red,
-                          foregroundColor: Colors.white,
-                          shape: const CircleBorder(),
-                          padding: const EdgeInsets.all(16),
-                        ),
-                        onPressed: () async {
-                          final confirm = await showDialog<bool>(
-                            context: context,
-                            builder:
-                                (context) => AlertDialog(
-                                  title: const Text('Deletar Playlist'),
-                                  content: const Text(
-                                    'Tem certeza que deseja deletar esta playlist?',
-                                  ),
-                                  actions: [
-                                    TextButton(
-                                      onPressed:
-                                          () =>
-                                              Navigator.of(context).pop(false),
-                                      child: const Text('Cancelar'),
-                                    ),
-                                    ElevatedButton(
-                                      onPressed:
-                                          () => Navigator.of(context).pop(true),
-                                      child: const Text('Deletar'),
-                                    ),
-                                  ],
-                                ),
-                          );
-                          if (confirm == true &&
-                              _currentUserId != null &&
-                              playlist.id != null) {
-                            Navigator.of(bc).pop(); // Fecha o bottom sheet
-                            await _playlistManager.deletePlaylistForUser(
-                              playlist.id!,
-                              _currentUserId!,
-                            );
-                          }
-                        },
-                        child: const Icon(Icons.delete), // Ícone centralizado
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-        );
-      },
-    );
-  }
+  
 
   @override
   Widget build(BuildContext context) {
@@ -981,6 +740,17 @@ try {
                 }
               },
             ),
+            ListTile(
+              leading: const Icon(Icons.people),
+              title: const Text('Social'),
+              onTap: () {
+                Navigator.pop(context); // fecha drawer
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const SocialScreen()),
+                );
+              },
+            ),
             const Spacer(), // Adiciona um espaço flexível para empurrar o botão de logout para o final
             // Botão para deslogar
             Align(
@@ -1027,9 +797,18 @@ try {
                   return Card(
                     margin: const EdgeInsets.symmetric(vertical: 8.0),
                     child: ListTile(
-                      leading: const Icon(
-                        Icons.music_note,
-                        color: Colors.purple,
+                      leading: Image.network(
+                        (playlist.playlistImageUrl?.isNotEmpty ?? false)
+                            ? playlist.playlistImageUrl!
+                            : 'https://storage.googleapis.com/tunetap_bucket/tunetap_logo_transparent.png',
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            width: 56,
+                            height: 56,
+                            color: Colors.grey[300],
+                            child: const Icon(Icons.image_not_supported),
+                          );
+                        }, fit: BoxFit.cover,
                       ),
                       title: Text(
                         playlist.name,
@@ -1060,7 +839,13 @@ try {
                         ],
                       ),
                       onTap: () {
-                        _createViewPlaylist(playlist);
+                        MaterialPageRoute route = MaterialPageRoute(
+                          builder: (context) => PlaylistDetailsPage(
+                            playlist: playlist,
+                            currentUserId: _currentUserId,
+                          ),
+                        );
+                        Navigator.push(context, route);
                       },
                     ),
                   );

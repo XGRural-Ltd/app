@@ -9,6 +9,7 @@ class Playlist {
   final List<Music> musics;
   final GeoPoint? geolocation;
   final bool? isFavorite ;
+  final String? playlistImageUrl;
 
   Playlist({
     this.id,
@@ -18,6 +19,7 @@ class Playlist {
     required this.musics,
     this.geolocation,
     this.isFavorite,
+    this.playlistImageUrl,
   });
 
   factory Playlist.fromFirestore(DocumentSnapshot doc) {
@@ -33,6 +35,7 @@ class Playlist {
           [],
       geolocation: data['geolocation'] as GeoPoint?,
       isFavorite: data['isFavorite'],
+      playlistImageUrl: data['playlistImageUrl'] as String?,
     );
   }
 
@@ -44,6 +47,7 @@ class Playlist {
       'musics': musics.map((music) => music.toMap()).toList(),
       if (geolocation != null) 'geolocation': geolocation,
       'isFavorite': isFavorite ?? false,
+      if (playlistImageUrl != null) 'playlistImageUrl': playlistImageUrl,
     };
   }
 
@@ -54,6 +58,7 @@ class Playlist {
       'musics': musics.map((music) => music.toMap()).toList(),
       if (geolocation != null) 'geolocation': geolocation,
       'isFavorite': isFavorite,
+      if (playlistImageUrl != null) 'playlistImageUrl': playlistImageUrl,
     };
   }
 
@@ -65,6 +70,7 @@ class Playlist {
     List<Music>? musics,
     GeoPoint? geolocation,
     bool? isFavorite,
+    String? playlistImageUrl,
   }) {
     return Playlist(
       id: id ?? this.id,
@@ -74,6 +80,7 @@ class Playlist {
       musics: musics ?? this.musics,
       geolocation: geolocation ?? this.geolocation,
       isFavorite: isFavorite ?? this.isFavorite,
+      playlistImageUrl: playlistImageUrl ?? this.playlistImageUrl,
     );
   }
 

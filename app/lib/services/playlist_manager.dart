@@ -48,20 +48,20 @@ class PlaylistManager extends ChangeNotifier {
     }
   }
 
-Future<bool> toggleFavoriteForUser(Playlist playlist, String userId) async {
-  if (playlist.id == null) {
-    print('Erro: O ID da playlist não pode ser nulo para favoritar.');
-    return false;
+  Future<bool> toggleFavoriteForUser(Playlist playlist, String userId) async {
+    if (playlist.id == null) {
+      print('Erro: O ID da playlist não pode ser nulo para favoritar.');
+      return false;
+    }
+    try {
+      final isFavorite = playlist.isFavorite ?? false;
+      final updatedPlaylist = playlist.copyWith(isFavorite: !isFavorite);
+      return await updatePlaylistForUser(updatedPlaylist, userId);
+    } catch (e) {
+      print('Erro ao alternar favorito: $e');
+      return false;
+    }
   }
-  try {
-    final isFavorite = playlist.isFavorite ?? false;
-    final updatedPlaylist = playlist.copyWith(isFavorite: !isFavorite);
-    return await updatePlaylistForUser(updatedPlaylist, userId);
-  } catch (e) {
-    print('Erro ao alternar favorito: $e');
-    return false;
-  }
-}
 
   Future<List<Playlist>> getPlaylistsForUser(String userId) async {
     try {
@@ -147,6 +147,32 @@ Future<bool> toggleFavoriteForUser(Playlist playlist, String userId) async {
       }
     } catch (e) {
       print('Erro ao deletar playlist: $e');
+      return false;
+    }
+  }
+
+  Future<bool> updatePlaylistImageUrl(String playlistId, String userId, String newImageUrl) async {
+    try {
+      // Verifica se a playlist pertence ao usuário
+      DocumentSnapshot doc = await _playlistsCollection.doc(playlistId).get();
+      if (doc.exists) {
+        Playlist existingPlaylist = Playlist.fromFirestore(doc);
+        if (existingPlaylist.userId == userId) {
+          await _playlistsCollection.doc(playlistId).update({
+            'playlistImageUrl': newImageUrl,
+          });
+          print('Imagem da playlist com ID $playlistId atualizada com sucesso para o usuário $userId.');
+          return true;
+        } else {
+          print('Acesso negado: Tentativa de atualizar imagem de playlist que não pertence ao usuário $userId.');
+          return false;
+        }
+      } else {
+        print('Playlist com ID $playlistId não encontrada para atualização de imagem.');
+        return false;
+      }
+    } catch (e) {
+      print('Erro ao atualizar imagem da playlist: $e');
       return false;
     }
   }
