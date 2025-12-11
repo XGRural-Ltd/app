@@ -248,9 +248,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
               'name': _nameController.text.trim(),
               'email': _emailController.text.trim(),
               'createdAt': FieldValue.serverTimestamp(),
-              'password':
-                  _passwordController.text
-                      .trim(), // Salvo em texto simples por enquanto
             });
         Navigator.pop(context);
 
@@ -738,6 +735,17 @@ try {
                     );
                   });
                 }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.people),
+              title: const Text('Social'),
+              onTap: () {
+                Navigator.pop(context); // fecha drawer
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const SocialScreen()),
+                );
               },
             ),
             ListTile(
