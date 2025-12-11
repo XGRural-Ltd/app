@@ -748,17 +748,6 @@ try {
                 );
               },
             ),
-            ListTile(
-              leading: const Icon(Icons.people),
-              title: const Text('Social'),
-              onTap: () {
-                Navigator.pop(context); // fecha drawer
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const SocialScreen()),
-                );
-              },
-            ),
             const Spacer(), // Adiciona um espaço flexível para empurrar o botão de logout para o final
             // Botão para deslogar
             Align(
